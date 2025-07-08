@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use walkdir::WalkDir;
+use trash::delete as trash_delete;
 
 mod converter;
 mod stats;
@@ -24,7 +24,6 @@ use stats::ConversionStats;
 pub struct Config {
     pub general: Option<GeneralConfig>,
     pub compression: Option<CompressionConfig>,
-    pub performance: Option<PerformanceConfig>,
     pub filtering: Option<FilteringConfig>,
     pub output: Option<OutputConfig>,
 }
@@ -41,12 +40,6 @@ pub struct GeneralConfig {
 pub struct CompressionConfig {
     pub quality: Option<u8>,
     pub mode: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PerformanceConfig {
-    pub threads: Option<usize>,
-    pub prescan: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -141,10 +134,6 @@ pub struct Args {
     #[arg(long, default_value = "true")]
     pub prescan: bool,
 
-    /// Performance mode: fast, balanced, quality
-    #[arg(long, default_value = "balanced")]
-    pub performance: String,
-
     /// Verbose output mode
     #[arg(short, long)]
     pub verbose: bool,
@@ -165,9 +154,13 @@ pub struct Args {
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Ultra-fast mode (trades quality for speed)
-    #[arg(long)]
-    pub ultra_fast: bool,
+    /// How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete]
+    #[arg(long, value_enum, default_value = "off")]
+    pub replace_input: ReplaceInputMode,
+
+    /// Force re-encoding of WebP files (by default, .webp files are skipped)
+    #[arg(long, default_value_t = false)]
+    pub reencode_webp: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -185,6 +178,16 @@ pub enum ReportFormat {
     Json,
     Csv,
     Html,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum ReplaceInputMode {
+    /// Do not delete input files (default)
+    Off,
+    /// Move input files to recycle bin after successful conversion
+    Recycle,
+    /// Permanently delete input files after successful conversion
+    Delete,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -393,20 +396,6 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
         }
     }
     
-    if let Some(performance) = &config.performance {
-        if args.threads.is_none() {
-            if let Some(threads) = performance.threads {
-                if threads > 0 {
-                    args.threads = Some(threads);
-                }
-            }
-        }
-        
-        if let Some(prescan) = performance.prescan {
-            args.prescan = prescan;
-        }
-    }
-    
     if let Some(filtering) = &config.filtering {
         if let Some(formats) = &filtering.formats {
             args.formats = formats.clone();
@@ -490,7 +479,10 @@ fn validate_args(args: &Args) -> Result<()> {
             anyhow::bail!("Thread count must be greater than 0");
         }
     }
-    
+    // Best practice: warn if --replace-input=delete and --output is also specified
+    if matches!(args.replace_input, ReplaceInputMode::Delete) && args.output.is_some() {
+        warn!("You specified both --replace-input=delete and --output. Output will be written to the specified directory, and input files will be deleted after successful conversion.");
+    }
     Ok(())
 }
 
@@ -516,7 +508,14 @@ fn setup_thread_pool(threads: Option<usize>) {
 fn get_output_dir(args: &Args) -> Result<PathBuf> {
     match &args.output {
         Some(output) => Ok(output.clone()),
-        None => Ok(args.input.join("webp_output")),
+        None => {
+            // If --replace-input=delete and no --output is specified, use input directory as output
+            if matches!(args.replace_input, ReplaceInputMode::Delete) {
+                Ok(args.input.clone())
+            } else {
+                Ok(args.input.join("webp_output"))
+            }
+        }
     }
 }
 
@@ -583,19 +582,13 @@ async fn convert_images(
     output_dir: &Path,
 ) -> Result<ConversionStats> {
     let stats = ConversionStats::new();
-    let converter = if args.ultra_fast {
-        ImageConverter::new_with_speed(args.quality, &args.mode, true)
-    } else {
-        ImageConverter::new(args.quality, &args.mode)
-    };
-    
-    // Performance optimization: Pre-create all output directories
+    let converter = ImageConverter::new(args.quality, &args.mode);
+
     if !args.quiet {
         info!("Pre-creating output directories for optimal performance...");
     }
-    let created_dirs = pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
-    
-    // Create optimized progress bar with reduced update frequency
+    pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
+
     let multi_progress = MultiProgress::new();
     let main_progress = multi_progress.add(ProgressBar::new(files.len() as u64));
     main_progress.set_style(
@@ -604,129 +597,89 @@ async fn convert_images(
             .unwrap()
             .progress_chars("#>-")
     );
-    
-    // Enable real-time drawing for more responsive UI
     main_progress.enable_steady_tick(Duration::from_millis(100));
-    
+
     let stats_clone = stats.clone();
     let progress_clone = main_progress.clone();
-    let created_dirs = Arc::new(created_dirs);
-    
-    // High-performance parallel processing with optimized chunk size
-    let chunk_size = if args.ultra_fast {
-        // Ultra-fast mode: larger chunks, less frequent updates for maximum speed
-        std::cmp::max(10, files.len() / (rayon::current_num_threads()))
-    } else {
-        // Normal mode: smaller chunks for more responsive UI
-        std::cmp::max(1, files.len() / (rayon::current_num_threads()))
-    };
-    
+    let replace_mode = args.replace_input.clone();
+
     files
-        .par_chunks(chunk_size)
-        .for_each(|chunk| {
-            let mut local_processed = 0;
-            let update_frequency = if args.ultra_fast { 
-                std::cmp::max(5, chunk.len() / 4) // Update every 5 files or 25% of chunk in ultra-fast
-            } else { 
-                1 // Update every file in normal mode
-            };
-            
-            for (i, input_path) in chunk.iter().enumerate() {
-                let result = process_single_image_optimized(
-                    input_path,
-                    output_dir,
-                    &args.input,
-                    &converter,
-                    args.preserve_structure,
-                    args.overwrite,
-                    &created_dirs,
-                );
-                
-                match result {
-                    Ok((original_size, compressed_size)) => {
-                        stats_clone.record_success(original_size, compressed_size);
-                        local_processed += 1;
-                    },
-                    Err(e) => {
-                        stats_clone.record_error(format!("{}: {}", input_path.display(), e));
-                        if args.verbose {
-                            error!("Failed to process {}: {}", input_path.display(), e);
-                        }
+        .par_iter()
+        .enumerate()
+        .for_each(|(idx, input_path)| {
+            // Best practice: skip already-WebP files by default, unless --reencode-webp is set
+            if let Some(ext) = input_path.extension().and_then(|e| e.to_str()) {
+                if ext.eq_ignore_ascii_case("webp") && !args.reencode_webp {
+                    stats_clone.skipped_count.fetch_add(1, Ordering::Relaxed);
+                    if args.verbose {
+                        info!("Skipping already-WebP file: {}", input_path.display());
+                    }
+                    if !args.quiet {
+                        progress_clone.inc(1);
+                    }
+                    return;
+                }
+            }
+
+            let result = process_single_image(
+                input_path,
+                output_dir,
+                &args.input,
+                &converter,
+                args.preserve_structure,
+                args.overwrite,
+            );
+
+            match result {
+                Ok((original_size, compressed_size)) => {
+                    stats_clone.record_success(original_size, compressed_size);
+                    // 新增：成功后根据replace_input删除输入文件
+                    match replace_mode {
+                        ReplaceInputMode::Off => {},
+                        ReplaceInputMode::Recycle => {
+                            if let Err(e) = trash_delete(input_path) {
+                                stats_clone.record_error(format!("[replace_input:recycle] {}: {}", input_path.display(), e));
+                                if args.verbose {
+                                    error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
+                                }
+                            }
+                        },
+                        ReplaceInputMode::Delete => {
+                            if let Err(e) = std::fs::remove_file(input_path) {
+                                stats_clone.record_error(format!("[replace_input:delete] {}: {}", input_path.display(), e));
+                                if args.verbose {
+                                    error!("Failed to delete {}: {}", input_path.display(), e);
+                                }
+                            }
+                        },
+                    }
+                },
+                Err(e) => {
+                    stats_clone.record_error(format!("{}: {}", input_path.display(), e));
+                    if args.verbose {
+                        error!("Failed to process {}: {}", input_path.display(), e);
                     }
                 }
-                
-                // More frequent progress updates for better user experience
-                if !args.quiet && (i + 1) % update_frequency == 0 {
-                    progress_clone.inc(local_processed);
-                    let current_pos = progress_clone.position();
-                    let total_files = progress_clone.length().unwrap_or(0);
-                    let percentage = if total_files > 0 { 
-                        (current_pos as f64 / total_files as f64 * 100.0) as u32 
-                    } else { 0 };
-                    progress_clone.set_message(format!("{}% - Processing batch of {} files", percentage, chunk.len()));
-                    local_processed = 0; // Reset counter after update
-                }
             }
-            
-            // Final update for any remaining files in the chunk
-            if !args.quiet && local_processed > 0 {
-                progress_clone.inc(local_processed);
+
+            if !args.quiet {
+                progress_clone.inc(1);
                 let current_pos = progress_clone.position();
                 let total_files = progress_clone.length().unwrap_or(0);
-                let percentage = if total_files > 0 { 
-                    (current_pos as f64 / total_files as f64 * 100.0) as u32 
+                let percentage = if total_files > 0 {
+                    (current_pos as f64 / total_files as f64 * 100.0) as u32
                 } else { 0 };
-                progress_clone.set_message(format!("{}% - Completed batch of {} files", percentage, chunk.len()));
+                if idx % 10 == 0 || current_pos == total_files {
+                    progress_clone.set_message(format!("{}% - Processing {} / {} files", percentage, current_pos, total_files));
+                }
             }
         });
-    
+
     if !args.quiet {
         main_progress.finish_with_message("Conversion completed!");
     }
-    
-    Ok(stats)
-}
 
-#[allow(dead_code)]
-fn process_single_image(
-    input_path: &Path,
-    output_dir: &Path,
-    input_root: &Path,
-    converter: &ImageConverter,
-    preserve_structure: bool,
-    overwrite: bool,
-) -> Result<(u64, u64)> {
-    let input_metadata = std::fs::metadata(input_path)?;
-    let original_size = input_metadata.len();
-    
-    // Calculate output path
-    let output_path = if preserve_structure {
-        let relative_path = input_path.strip_prefix(input_root)?;
-        let mut output_path = output_dir.join(relative_path);
-        output_path.set_extension("webp");
-        output_path
-    } else {
-        let filename = input_path.file_stem()
-            .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
-        output_dir.join(format!("{}.webp", filename.to_string_lossy()))
-    };
-    
-    // Check if overwrite is needed
-    if output_path.exists() && !overwrite {
-        return Err(anyhow::anyhow!("File exists and overwrite mode is disabled"));
-    }
-    
-    // Create output directory
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    
-    // Convert image
-    converter.convert_to_webp(input_path, &output_path)?;
-    
-    let compressed_size = std::fs::metadata(&output_path)?.len();
-    
-    Ok((original_size, compressed_size))
+    Ok(stats)
 }
 
 fn pre_create_directories(
@@ -734,10 +687,8 @@ fn pre_create_directories(
     output_dir: &Path,
     input_root: &Path,
     preserve_structure: bool,
-) -> Result<HashSet<PathBuf>> {
+) -> Result<()> {
     let mut dirs_to_create = HashSet::new();
-    
-    // Collect all unique directory paths
     for input_path in files {
         let output_path = if preserve_structure {
             let relative_path = input_path.strip_prefix(input_root)?;
@@ -749,35 +700,28 @@ fn pre_create_directories(
                 .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
             output_dir.join(format!("{}.webp", filename.to_string_lossy()))
         };
-        
         if let Some(parent) = output_path.parent() {
             dirs_to_create.insert(parent.to_path_buf());
         }
     }
-    
-    // Batch create all directories
     dirs_to_create.par_iter().for_each(|dir| {
         if let Err(e) = std::fs::create_dir_all(dir) {
             error!("Failed to create directory {}: {}", dir.display(), e);
         }
     });
-    
-    Ok(dirs_to_create)
+    Ok(())
 }
 
-fn process_single_image_optimized(
+fn process_single_image(
     input_path: &Path,
     output_dir: &Path,
     input_root: &Path,
     converter: &ImageConverter,
     preserve_structure: bool,
     overwrite: bool,
-    _created_dirs: &Arc<HashSet<PathBuf>>, // Pre-created directories
 ) -> Result<(u64, u64)> {
     let input_metadata = std::fs::metadata(input_path)?;
     let original_size = input_metadata.len();
-    
-    // Calculate output path (same logic but directory already exists)
     let output_path = if preserve_structure {
         let relative_path = input_path.strip_prefix(input_root)?;
         let mut output_path = output_dir.join(relative_path);
@@ -788,17 +732,11 @@ fn process_single_image_optimized(
             .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
         output_dir.join(format!("{}.webp", filename.to_string_lossy()))
     };
-    
-    // Check if overwrite is needed
     if output_path.exists() && !overwrite {
         return Err(anyhow::anyhow!("File exists and overwrite mode is disabled"));
     }
-    
-    // Convert image (directory already pre-created)
     converter.convert_to_webp(input_path, &output_path)?;
-    
     let compressed_size = std::fs::metadata(&output_path)?.len();
-    
     Ok((original_size, compressed_size))
 }
 

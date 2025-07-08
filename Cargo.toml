@@ -41,3 +41,4 @@ toml = "0.8"
 humansize = "2.1"
 chrono = { version = "0.4", features = ["serde"] }
 num_cpus = "1.16"
+trash = "5.2.2"

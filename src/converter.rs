@@ -26,15 +26,6 @@ impl ImageConverter {
         }
     }
 
-    pub fn new_with_speed(quality: u8, mode: &CompressionMode, ultra_fast: bool) -> Self {
-        Self {
-            quality: quality as f32,
-            mode: mode.clone(),
-            encoding_speed: if ultra_fast { 0 } else { 1 },
-            ultra_fast,
-        }
-    }
-
     pub fn convert_to_webp(&self, input_path: &Path, output_path: &Path) -> Result<()> {
         // Performance: Read image with optimized buffer size
         let img = image::open(input_path)
@@ -113,47 +104,6 @@ impl ImageConverter {
         std::fs::write(output_path, &**webp_data)
             .with_context(|| format!("Failed to save WebP file: {}", output_path.display()))?;
         Ok(())
-    }
-
-    // Legacy methods for compatibility
-    #[allow(dead_code)]
-    fn save_webp_data(&self, webp_data: &WebPMemory, output_path: &Path) -> Result<()> {
-        std::fs::write(output_path, &**webp_data)
-            .with_context(|| format!("Failed to save WebP file: {}", output_path.display()))?;
-        Ok(())
-    }
-
-    /// Get supported input formats
-    #[allow(dead_code)]
-    pub fn supported_formats() -> Vec<&'static str> {
-        vec!["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
-    }
-
-    /// Check if file is a supported format
-    #[allow(dead_code)]
-    pub fn is_supported_format(path: &Path) -> bool {
-        if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-            let ext_lower = extension.to_lowercase();
-            Self::supported_formats().contains(&ext_lower.as_str())
-        } else {
-            false
-        }
-    }
-
-    /// Estimate compression ratio
-    #[allow(dead_code)]
-    pub fn estimate_compression_ratio(&self, format: &str, mode: &CompressionMode) -> f64 {
-        match (format.to_lowercase().as_str(), mode) {
-            ("jpg" | "jpeg", CompressionMode::Lossy) => 0.7,    // JPG to WebP lossy ~70%
-            ("jpg" | "jpeg", CompressionMode::Lossless) => 0.9, // JPG to WebP lossless ~90%
-            ("png", CompressionMode::Lossy) => 0.4,             // PNG to WebP lossy ~40%
-            ("png", CompressionMode::Lossless) => 0.6,          // PNG to WebP lossless ~60%
-            ("gif", _) => 0.5,                                  // GIF to WebP ~50%
-            ("bmp", _) => 0.2,                                  // BMP to WebP ~20%
-            ("tiff", _) => 0.3,                                 // TIFF to WebP ~30%
-            ("webp", _) => 1.0,                                 // WebP to WebP ~unchanged
-            _ => 0.5,                                           // Default 50%
-        }
     }
 
     /// Validate and potentially resize image to fit WebP constraints
