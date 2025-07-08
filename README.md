@@ -60,32 +60,29 @@ webpify -i ./large_dataset -t 16 --quiet
 
 webpify - High-performance batch WebP converter
 
-USAGE:
-    webpify [OPTIONS] --input <DIR>
+Usage: webpify [OPTIONS] --input <DIR>
 
-OPTIONS:
-    -i, --input <DIR>              Input directory path
-    -o, --output <DIR>             Output directory path (defaults to input_dir/webp_output)
-    -q, --quality <QUALITY>        WebP compression quality (0-100) [default: 80]
-    -t, --threads <NUM>            Number of parallel threads (defaults to CPU core count for I/O optimization)
-    -m, --mode <MODE>              Compression mode [default: lossless]
-                                   [possible values: lossless, lossy, auto]
-        --formats <FORMATS>        Supported input formats (defaults to common formats)
-                                   [default: jpg jpeg png gif bmp tiff webp]
-        --overwrite                Overwrite existing files
-        --preserve-structure       Preserve original directory structure
-        --max-size <SIZE>          Maximum file size limit (MB)
-        --min-size <SIZE>          Minimum file size limit (KB) [default: 1]
-        --prescan                  Enable pre-processing scan
-        --performance <PERFORMANCE> Performance mode: fast, balanced, quality [default: balanced]
-    -v, --verbose                  Verbose output mode
-        --quiet                    Quiet mode (results only)
-        --report                   Generate conversion report
-        --report-format <REPORT_FORMAT> Report output format [default: json] [possible values: json, csv, html]
-    -c, --config <FILE>            Configuration file path
-        --ultra-fast               Ultra-fast mode (trades quality for speed)
-    -h, --help                     Print help
-    -V, --version                  Print version
+Options:
+  -i, --input <DIR>                    Input directory path
+  -o, --output <DIR>                   Output directory path (defaults to input_dir/webp_output)
+  -q, --quality <QUALITY>              WebP compression quality (0-100) [default: 80]
+  -t, --threads <NUM>                  Number of parallel threads (defaults to CPU core count for I/O optimization)
+  -m, --mode <MODE>                    Compression mode [default: lossless] [possible values: lossless, lossy, auto]
+      --formats <FORMATS>              Supported input formats (defaults to common formats) [default: jpg jpeg png gif bmp tiff webp]
+      --overwrite                      Overwrite existing files
+      --preserve-structure             Preserve original directory structure
+      --max-size <SIZE>                Maximum file size limit (MB)
+      --min-size <SIZE>                Minimum file size limit (KB) [default: 1]
+      --prescan                        Enable pre-processing scan
+  -v, --verbose                        Verbose output mode
+      --quiet                          Quiet mode (results only)
+      --report                         Generate conversion report
+      --report-format <REPORT_FORMAT>  Report output format [default: json] [possible values: json, csv, html]
+  -c, --config <FILE>                  Configuration file path
+      --replace-input <REPLACE_INPUT>  How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] [default: off] [possible values: off, recycle, delete]
+      --reencode-webp                  Force re-encoding of WebP files (by default, .webp files are skipped)
+  -h, --help                           Print help (see more with '--help')
+  -V, --version                        Print version
 ```
 
 ## 🔧 Advanced Configuration
@@ -93,15 +90,65 @@ OPTIONS:
 ### Performance Tuning
 
 ```bash
-# SSD-optimized (high concurrency)
-webpify -i ./images -t 24 --prescan false
+# High concurrency (SSD or fast storage, accurate progress)
+# (Prescan is enabled by default and recommended for SSDs)
+webpify -i ./images -t 24
 
-# HDD-optimized (low concurrency)
+# Low concurrency (HDD or slow storage, reduce random seeks)
+# (To disable prescan, set prescan = false in the config file)
 webpify -i ./images -t 4 --min-size 10
 
 # Memory-constrained environment
 webpify -i ./images -t 2 --max-size 10
 ```
+
+> Note:
+>
+> - The `--prescan` flag is a boolean switch (enable only). To disable prescan, set `prescan = false` in your config file.
+> - Prescan is enabled by default and is recommended for SSDs and most use cases. Disabling prescan may help reduce startup time and memory usage for very large datasets on slow HDDs, but progress reporting will be less accurate.
+
+## 🛠 Example Configuration File
+
+webpify supports TOML config files for advanced and repeatable setups. The tool will automatically search for a config file in these locations (in order):
+
+1. Path specified by `--config <FILE>`
+2. `./webpify.config.toml` (current directory)
+3. `~/.config/webpify/config.toml` (Linux/macOS user config)
+4. `%APPDATA%\webpify\config.toml` (Windows user config)
+5. `/etc/webpify/config.toml` (system-wide, non-Windows)
+
+The first config file found will be loaded. CLI arguments always take precedence over config values.
+
+### `example.config.toml`
+
+```toml
+[general]
+input_dir = "./images"
+output_dir = "./webp_output"
+preserve_structure = true
+overwrite = false
+threads = 8
+prescan = true
+replace_input = "off" # off, recycle, delete
+reencode_webp = false
+
+[compression]
+quality = 85
+mode = "auto" # lossless, lossy, auto
+
+[filtering]
+formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+min_size = 1
+max_size = 0
+
+[output]
+verbose = true
+quiet = false
+generate_report = true
+report_format = "json" # json, csv, html
+```
+
+See `example.config.toml` in the repository for a full reference and comments.
 
 ## 📄 License
 

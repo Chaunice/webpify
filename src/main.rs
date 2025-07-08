@@ -34,6 +34,10 @@ pub struct GeneralConfig {
     pub output_dir: Option<String>,
     pub preserve_structure: Option<bool>,
     pub overwrite: Option<bool>,
+    pub threads: Option<usize>,
+    pub prescan: Option<bool>,
+    pub replace_input: Option<String>,
+    pub reencode_webp: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,9 +228,35 @@ async fn main() -> Result<()> {
     }
 
     let mut args = Args::parse();
-    
-    // Load config file if specified
-    if let Some(config_path) = args.config.clone() {
+
+    // Best practice: Find config file if not specified
+    let config_path = if let Some(cli_config) = args.config.clone() {
+        Some(cli_config)
+    } else {
+        // Search for config in standard locations
+        let mut candidates = Vec::new();
+        // 1. Current directory
+        candidates.push(std::env::current_dir().unwrap().join("webpify.config.toml"));
+        // 2. XDG config home (Linux/macOS)
+        if let Some(xdg_config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+            candidates.push(PathBuf::from(xdg_config_home).join("webpify/config.toml"));
+        } else if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join(".config/webpify/config.toml"));
+        }
+        // 3. Windows: %APPDATA%\\webpify\\config.toml
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            candidates.push(PathBuf::from(appdata).join("webpify/config.toml"));
+        }
+        // 4. System-wide (optional)
+        #[cfg(not(windows))]
+        {
+            candidates.push(PathBuf::from("/etc/webpify/config.toml"));
+        }
+        // Use the first existing config file
+        candidates.into_iter().find(|p| p.exists())
+    };
+
+    if let Some(config_path) = config_path {
         load_config(&mut args, &config_path)?;
     }
     
@@ -359,22 +389,47 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
                 args.input = PathBuf::from(input_dir);
             }
         }
-        
         if args.output.is_none() {
             if let Some(output_dir) = &general.output_dir {
                 args.output = Some(PathBuf::from(output_dir));
             }
         }
-        
         if let Some(preserve) = general.preserve_structure {
             if !args.preserve_structure {
                 args.preserve_structure = preserve;
             }
         }
-        
         if let Some(overwrite) = general.overwrite {
             if !args.overwrite {
                 args.overwrite = overwrite;
+            }
+        }
+        // New: threads
+        if let Some(threads) = general.threads {
+            if args.threads.is_none() {
+                args.threads = Some(threads);
+            }
+        }
+        // New: prescan
+        if let Some(prescan) = general.prescan {
+            args.prescan = prescan;
+        }
+        // New: reencode_webp
+        if let Some(reencode_webp) = general.reencode_webp {
+            args.reencode_webp = reencode_webp;
+        }
+        // New: replace_input
+        if let Some(replace_input) = &general.replace_input {
+            if matches!(args.replace_input, ReplaceInputMode::Off) {
+                args.replace_input = match replace_input.to_lowercase().as_str() {
+                    "off" => ReplaceInputMode::Off,
+                    "recycle" => ReplaceInputMode::Recycle,
+                    "delete" => ReplaceInputMode::Delete,
+                    _ => {
+                        warn!("Invalid replace_input in config: {}", replace_input);
+                        ReplaceInputMode::Off
+                    }
+                };
             }
         }
     }
@@ -621,6 +676,7 @@ async fn convert_images(
                 }
             }
 
+            // Process the image and handle result
             let result = process_single_image(
                 input_path,
                 output_dir,
@@ -633,7 +689,7 @@ async fn convert_images(
             match result {
                 Ok((original_size, compressed_size)) => {
                     stats_clone.record_success(original_size, compressed_size);
-                    // 新增：成功后根据replace_input删除输入文件
+                    // Best practice: handle input file replacement after successful conversion
                     match replace_mode {
                         ReplaceInputMode::Off => {},
                         ReplaceInputMode::Recycle => {

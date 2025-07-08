@@ -1,0 +1,44 @@
+# Example configuration for webpify
+# Save as webpify.config.toml in your project directory or config folder
+
+[general]
+# Input and output directories (relative or absolute paths)
+input_dir = "./images"
+output_dir = "./webp_output"
+
+# Preserve original directory structure in output
+preserve_structure = true
+# Overwrite existing files in output directory
+overwrite = false
+# Number of parallel threads (default: CPU core count)
+threads = 8
+# Enable pre-processing scan (recommended for large batches)
+prescan = true
+# How to handle input files after conversion: off, recycle, delete
+replace_input = "off"
+# Force re-encoding of .webp files (default: false)
+reencode_webp = false
+
+[compression]
+# WebP quality (0-100)
+quality = 85
+# Compression mode: lossless, lossy, auto
+mode = "auto"
+
+[filtering]
+# List of allowed input formats
+formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+# Minimum file size in KB
+min_size = 1
+# Maximum file size in MB (set to 0 for unlimited)
+max_size = 0
+
+[output]
+# Verbose output
+verbose = true
+# Quiet mode (results only)
+quiet = false
+# Generate conversion report
+generate_report = true
+# Report format: json, csv, html
+report_format = "json"
