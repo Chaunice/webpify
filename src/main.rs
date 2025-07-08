@@ -67,7 +67,7 @@ pub struct OutputConfig {
 #[derive(Parser)]
 #[command(name = "webpify")]
 #[command(about = "webpify - High-performance batch WebP converter")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(author = "Haobo Zhang")]
 #[command(long_about = r#"
 webpify is a high-performance tool designed for large-scale image conversion to WebP format.
@@ -266,7 +266,7 @@ async fn main() -> Result<()> {
     // Validate arguments
     validate_args(&args)?;
     
-    // 设置线程池
+    // Set up the thread pool
     setup_thread_pool(args.threads);
     
     // Create output directory
