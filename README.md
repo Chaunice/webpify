@@ -150,6 +150,11 @@ report_format = "json" # json, csv, html
 
 See `example.config.toml` in the repository for a full reference and comments.
 
+## 📝 TODO
+
+- [ ] Add support for additional image formats.
+- [ ] Consider adding AVIF output support.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
