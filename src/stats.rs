@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct ConversionStats {
@@ -13,6 +14,7 @@ pub struct ConversionStats {
     pub compressed_size: Arc<AtomicU64>,
     format_stats: Arc<Mutex<HashMap<String, u64>>>,
     errors: Arc<Mutex<Vec<ErrorRecord>>>,
+    start_time: Arc<Mutex<Option<Instant>>>,
 }
 
 #[allow(dead_code)]
@@ -35,7 +37,37 @@ impl ConversionStats {
             compressed_size: Arc::new(AtomicU64::new(0)),
             format_stats: Arc::new(Mutex::new(HashMap::new())),
             errors: Arc::new(Mutex::new(Vec::new())),
+            start_time: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn start_timer(&self) {
+        if let Ok(mut start_time) = self.start_time.lock() {
+            *start_time = Some(Instant::now());
+        }
+    }
+
+    pub fn estimate_eta(&self, total_files: u64) -> Option<std::time::Duration> {
+        let processed = self.processed_count.load(Ordering::Relaxed);
+        
+        if processed == 0 || total_files == 0 {
+            return None;
+        }
+
+        if let Ok(start_time) = self.start_time.lock() {
+            if let Some(start) = *start_time {
+                let elapsed = start.elapsed();
+                let rate = processed as f64 / elapsed.as_secs_f64();
+                let remaining_files = total_files.saturating_sub(processed);
+                
+                if rate > 0.0 {
+                    let eta_seconds = remaining_files as f64 / rate;
+                    return Some(std::time::Duration::from_secs_f64(eta_seconds));
+                }
+            }
+        }
+        
+        None
     }
 
     pub fn record_success(&self, original_size: u64, compressed_size: u64) {

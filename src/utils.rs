@@ -175,6 +175,23 @@ fn check_filesystem_space(_path: &Path, _required_space: u64) -> Result<bool> {
     Ok(true)
 }
 
+/// Format duration for human-readable display
+pub fn format_duration(duration: std::time::Duration) -> String {
+    let total_seconds = duration.as_secs();
+    
+    if total_seconds < 60 {
+        format!("{}s", total_seconds)
+    } else if total_seconds < 3600 {
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        format!("{}h {}m", hours, minutes)
+    }
+}
+
 /// Create safe output filename (avoid path traversal attacks)
 #[allow(dead_code)]
 pub fn sanitize_filename(filename: &str) -> String {

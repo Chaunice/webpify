@@ -19,6 +19,7 @@ mod utils;
 
 use converter::ImageConverter;
 use stats::ConversionStats;
+use utils::format_duration;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -38,6 +39,7 @@ pub struct GeneralConfig {
     pub prescan: Option<bool>,
     pub replace_input: Option<String>,
     pub reencode_webp: Option<bool>,
+    pub dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +167,10 @@ pub struct Args {
     /// Force re-encoding of WebP files (by default, .webp files are skipped)
     #[arg(long, default_value_t = false)]
     pub reencode_webp: bool,
+
+    /// Dry run mode - preview operations without making changes
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -418,6 +424,10 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
         if let Some(reencode_webp) = general.reencode_webp {
             args.reencode_webp = reencode_webp;
         }
+        // New: dry_run
+        if let Some(dry_run) = general.dry_run {
+            args.dry_run = dry_run;
+        }
         // New: replace_input
         if let Some(replace_input) = &general.replace_input {
             if matches!(args.replace_input, ReplaceInputMode::Off) {
@@ -637,12 +647,20 @@ async fn convert_images(
     output_dir: &Path,
 ) -> Result<ConversionStats> {
     let stats = ConversionStats::new();
-    let converter = ImageConverter::new(args.quality, &args.mode);
+    let converter = ImageConverter::new_with_dry_run(args.quality, &args.mode, args.dry_run);
 
-    if !args.quiet {
+    if args.dry_run {
+        println!("\n🔍 DRY RUN MODE - No files will be modified");
+        println!("📋 Preview of planned operations:\n");
+    }
+
+    if !args.quiet && !args.dry_run {
         info!("Pre-creating output directories for optimal performance...");
     }
-    pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
+    
+    if !args.dry_run {
+        pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
+    }
 
     let multi_progress = MultiProgress::new();
     let main_progress = multi_progress.add(ProgressBar::new(files.len() as u64));
@@ -654,9 +672,13 @@ async fn convert_images(
     );
     main_progress.enable_steady_tick(Duration::from_millis(100));
 
+    // Start the timer for ETA calculation
+    stats.start_timer();
+
     let stats_clone = stats.clone();
     let progress_clone = main_progress.clone();
     let replace_mode = args.replace_input.clone();
+    let total_files = files.len() as u64;
 
     files
         .par_iter()
@@ -684,6 +706,7 @@ async fn convert_images(
                 &converter,
                 args.preserve_structure,
                 args.overwrite,
+                args.dry_run,
             );
 
             match result {
@@ -721,12 +744,20 @@ async fn convert_images(
             if !args.quiet {
                 progress_clone.inc(1);
                 let current_pos = progress_clone.position();
-                let total_files = progress_clone.length().unwrap_or(0);
-                let percentage = if total_files > 0 {
-                    (current_pos as f64 / total_files as f64 * 100.0) as u32
+                let total_files_progress = progress_clone.length().unwrap_or(0);
+                let percentage = if total_files_progress > 0 {
+                    (current_pos as f64 / total_files_progress as f64 * 100.0) as u32
                 } else { 0 };
-                if idx % 10 == 0 || current_pos == total_files {
-                    progress_clone.set_message(format!("{}% - Processing {} / {} files", percentage, current_pos, total_files));
+                
+                // Update progress message with ETA
+                if idx % 10 == 0 || current_pos == total_files_progress {
+                    let eta_msg = if let Some(eta) = stats_clone.estimate_eta(total_files) {
+                        format!(" (ETA: {})", format_duration(eta))
+                    } else {
+                        String::new()
+                    };
+                    progress_clone.set_message(format!("{}% - Processing {} / {} files{}", 
+                        percentage, current_pos, total_files_progress, eta_msg));
                 }
             }
         });
@@ -775,9 +806,11 @@ fn process_single_image(
     converter: &ImageConverter,
     preserve_structure: bool,
     overwrite: bool,
+    dry_run: bool,
 ) -> Result<(u64, u64)> {
     let input_metadata = std::fs::metadata(input_path)?;
     let original_size = input_metadata.len();
+    
     let output_path = if preserve_structure {
         let relative_path = input_path.strip_prefix(input_root)?;
         let mut output_path = output_dir.join(relative_path);
@@ -788,11 +821,20 @@ fn process_single_image(
             .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
         output_dir.join(format!("{}.webp", filename.to_string_lossy()))
     };
-    if output_path.exists() && !overwrite {
+    
+    if !dry_run && output_path.exists() && !overwrite {
         return Err(anyhow::anyhow!("File exists and overwrite mode is disabled"));
     }
+    
     converter.convert_to_webp(input_path, &output_path)?;
-    let compressed_size = std::fs::metadata(&output_path)?.len();
+    
+    let compressed_size = if dry_run {
+        // Estimate compressed size for dry run (assume 60% compression ratio)
+        (original_size as f64 * 0.6) as u64
+    } else {
+        std::fs::metadata(&output_path)?.len()
+    };
+    
     Ok((original_size, compressed_size))
 }
 
@@ -818,6 +860,9 @@ fn print_ascii_config(args: &Args, output_dir: &Path) {
     println!("   Mode:        {:?}", args.mode);
     println!("   Threads:     {}", rayon::current_num_threads());
     println!("   Formats:     {}", args.formats.join(", "));
+    if args.dry_run {
+        println!("   🔍 DRY RUN:  Enabled (preview mode)");
+    }
     println!();
 }
 

@@ -81,6 +81,7 @@ Options:
   -c, --config <FILE>                  Configuration file path
       --replace-input <REPLACE_INPUT>  How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] [default: off] [possible values: off, recycle, delete]
       --reencode-webp                  Force re-encoding of WebP files (by default, .webp files are skipped)
+      --dry-run                        Dry run mode - preview operations without making changes
   -h, --help                           Print help (see more with '--help')
   -V, --version                        Print version
 ```
@@ -100,6 +101,9 @@ webpify -i ./images -t 4 --min-size 10
 
 # Memory-constrained environment
 webpify -i ./images -t 2 --max-size 10
+
+# Preview mode (dry run) - see what would be converted without making changes
+webpify -i ./images --dry-run --verbose
 ```
 
 > Note:
@@ -131,6 +135,7 @@ threads = 8
 prescan = true
 replace_input = "off" # off, recycle, delete
 reencode_webp = false
+dry_run = false # Enable preview mode
 
 [compression]
 quality = 85

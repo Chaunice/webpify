@@ -14,9 +14,12 @@ pub struct ImageConverter {
     encoding_speed: i32,
     // Ultra-fast mode for maximum performance
     ultra_fast: bool,
+    // Dry run mode - preview without actual conversion
+    dry_run: bool,
 }
 
 impl ImageConverter {
+    #[allow(dead_code)]
     pub fn new(quality: u8, mode: &CompressionMode) -> Self {
         Self {
             quality: quality as f32,
@@ -24,10 +27,27 @@ impl ImageConverter {
             // Use fastest encoding for maximum performance (0=fastest, 6=slowest)
             encoding_speed: 0, // Ultra-fast encoding
             ultra_fast: true,
+            dry_run: false,
+        }
+    }
+
+    pub fn new_with_dry_run(quality: u8, mode: &CompressionMode, dry_run: bool) -> Self {
+        Self {
+            quality: quality as f32,
+            mode: mode.clone(),
+            // Use fastest encoding for maximum performance (0=fastest, 6=slowest)
+            encoding_speed: 0, // Ultra-fast encoding
+            ultra_fast: true,
+            dry_run,
         }
     }
 
     pub fn convert_to_webp(&self, input_path: &Path, output_path: &Path) -> Result<()> {
+        // Dry run mode: only analyze without converting
+        if self.dry_run {
+            return self.analyze_conversion(input_path, output_path);
+        }
+
         // Performance: Read image with optimized buffer size
         let img = image::open(input_path)
             .with_context(|| format!("Failed to read image: {}", input_path.display()))?;
@@ -44,6 +64,40 @@ impl ImageConverter {
             CompressionMode::Lossy => self.convert_lossy_fast(&processed_img, output_path),
             CompressionMode::Auto => self.convert_auto_fast(&processed_img, output_path, input_path),
         }
+    }
+
+    /// Analyze conversion without actually performing it (dry run mode)
+    fn analyze_conversion(&self, input_path: &Path, output_path: &Path) -> Result<()> {
+        // Read image to analyze but don't convert
+        let img = image::open(input_path)
+            .with_context(|| format!("Failed to read image: {}", input_path.display()))?;
+
+        let (width, height) = img.dimensions();
+        let compression_mode = if matches!(self.mode, CompressionMode::Auto) {
+            if self.should_use_lossless_fast(&img, input_path) {
+                "lossless"
+            } else {
+                "lossy"
+            }
+        } else {
+            match self.mode {
+                CompressionMode::Lossless => "lossless",
+                CompressionMode::Lossy => "lossy",
+                CompressionMode::Auto => unreachable!(),
+            }
+        };
+
+        log::info!(
+            "[DRY RUN] {} -> {} ({}x{}, mode: {}, quality: {})",
+            input_path.display(),
+            output_path.display(),
+            width,
+            height,
+            compression_mode,
+            self.quality
+        );
+
+        Ok(())
     }
 
     fn convert_lossless_fast(&self, img: &DynamicImage, output_path: &Path) -> Result<()> {
