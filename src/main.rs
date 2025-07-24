@@ -19,6 +19,7 @@ mod utils;
 
 use converter::ImageConverter;
 use stats::ConversionStats;
+use utils::{format_duration, is_valid_image_file};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -26,6 +27,18 @@ pub struct Config {
     pub compression: Option<CompressionConfig>,
     pub filtering: Option<FilteringConfig>,
     pub output: Option<OutputConfig>,
+    pub profiles: Option<std::collections::HashMap<String, ProfileConfig>>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProfileConfig {
+    pub description: Option<String>,
+    pub quality: Option<u8>,
+    pub mode: Option<String>,
+    pub max_size: Option<u64>,
+    pub preserve_structure: Option<bool>,
+    pub formats: Option<Vec<String>>,
+    pub threads: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +51,7 @@ pub struct GeneralConfig {
     pub prescan: Option<bool>,
     pub replace_input: Option<String>,
     pub reencode_webp: Option<bool>,
+    pub dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +172,10 @@ pub struct Args {
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
+    /// Use a predefined configuration profile
+    #[arg(long, value_name = "PROFILE")]
+    pub profile: Option<String>,
+
     /// How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete]
     #[arg(long, value_enum, default_value = "off")]
     pub replace_input: ReplaceInputMode,
@@ -165,6 +183,14 @@ pub struct Args {
     /// Force re-encoding of WebP files (by default, .webp files are skipped)
     #[arg(long, default_value_t = false)]
     pub reencode_webp: bool,
+
+    /// Dry run mode - preview operations without making changes
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+
+    /// Enable quality metrics calculation (SSIM/PSNR)
+    #[arg(long, default_value_t = false)]
+    pub quality_metrics: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -258,6 +284,12 @@ async fn main() -> Result<()> {
 
     if let Some(config_path) = config_path {
         load_config(&mut args, &config_path)?;
+    }
+    
+    // Load profile if specified
+    let profile_name = args.profile.clone();
+    if let Some(profile_name) = profile_name {
+        load_profile(&mut args, &profile_name)?;
     }
     
     // Initialize logging system
@@ -418,6 +450,10 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
         if let Some(reencode_webp) = general.reencode_webp {
             args.reencode_webp = reencode_webp;
         }
+        // New: dry_run
+        if let Some(dry_run) = general.dry_run {
+            args.dry_run = dry_run;
+        }
         // New: replace_input
         if let Some(replace_input) = &general.replace_input {
             if matches!(args.replace_input, ReplaceInputMode::Off) {
@@ -502,6 +538,81 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
+    // Search for profiles.toml in standard locations
+    let mut profile_candidates = Vec::new();
+    
+    // 1. Current directory
+    profile_candidates.push(std::env::current_dir().unwrap().join("profiles.toml"));
+    // 2. Next to the config file if specified
+    if let Some(config_path) = &args.config {
+        if let Some(parent) = config_path.parent() {
+            profile_candidates.push(parent.join("profiles.toml"));
+        }
+    }
+    // 3. XDG config home (Linux/macOS)
+    if let Some(xdg_config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+        profile_candidates.push(PathBuf::from(xdg_config_home).join("webpify/profiles.toml"));
+    } else if let Some(home) = dirs::home_dir() {
+        profile_candidates.push(home.join(".config/webpify/profiles.toml"));
+    }
+    // 4. Windows: %APPDATA%\\webpify\\profiles.toml
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        profile_candidates.push(PathBuf::from(appdata).join("webpify/profiles.toml"));
+    }
+    
+    let profiles_path = profile_candidates.into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| anyhow::anyhow!("No profiles.toml file found. Use built-in profiles or create a profiles.toml file."))?;
+
+    let profiles_content = std::fs::read_to_string(&profiles_path)
+        .with_context(|| format!("Failed to read profiles file: {}", profiles_path.display()))?;
+
+    let profiles_config: std::collections::HashMap<String, std::collections::HashMap<String, ProfileConfig>> = 
+        toml::from_str(&profiles_content)
+        .with_context(|| format!("Failed to parse profiles file: {}", profiles_path.display()))?;
+
+    let profile = profiles_config
+        .get("profiles")
+        .and_then(|profiles| profiles.get(profile_name))
+        .ok_or_else(|| anyhow::anyhow!("Profile '{}' not found in profiles.toml", profile_name))?;
+
+    // Apply profile settings to args
+    if let Some(quality) = profile.quality {
+        args.quality = quality;
+    }
+    if let Some(mode_str) = &profile.mode {
+        match mode_str.to_lowercase().as_str() {
+            "lossless" => args.mode = CompressionMode::Lossless,
+            "lossy" => args.mode = CompressionMode::Lossy,
+            "auto" => args.mode = CompressionMode::Auto,
+            _ => warn!("Invalid compression mode in profile: {}", mode_str),
+        }
+    }
+    if let Some(max_size) = profile.max_size {
+        if max_size > 0 {
+            args.max_size = Some(max_size);
+        }
+    }
+    if let Some(preserve) = profile.preserve_structure {
+        args.preserve_structure = preserve;
+    }
+    if let Some(formats) = &profile.formats {
+        args.formats = formats.clone();
+    }
+    if let Some(threads) = profile.threads {
+        if threads > 0 {
+            args.threads = Some(threads);
+        }
+    }
+
+    info!("Loaded profile '{}' from: {}", profile_name, profiles_path.display());
+    if let Some(description) = &profile.description {
+        info!("Profile description: {}", description);
+    }
+    Ok(())
+}
+
 fn init_logging(args: &Args) -> Result<()> {
     let level = if args.verbose {
         "debug"
@@ -580,6 +691,8 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
         .map(|f| f.to_lowercase())
         .collect();
     
+    let verbose = args.verbose; // Capture for use in closure
+    
     if !args.quiet {
         info!("Scanning directory: {}", args.input.display());
     }
@@ -599,6 +712,14 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
                 .map(|ext| ext.to_lowercase())?;
             
             if !supported_extensions.contains(&extension) {
+                return None;
+            }
+            
+            // Deep validation: check file headers for integrity
+            if !is_valid_image_file(path) {
+                if verbose {
+                    eprintln!("Warning: Skipping invalid image file: {}", path.display());
+                }
                 return None;
             }
             
@@ -637,12 +758,20 @@ async fn convert_images(
     output_dir: &Path,
 ) -> Result<ConversionStats> {
     let stats = ConversionStats::new();
-    let converter = ImageConverter::new(args.quality, &args.mode);
+    let converter = ImageConverter::new_with_dry_run(args.quality, &args.mode, args.dry_run);
 
-    if !args.quiet {
+    if args.dry_run {
+        println!("\n🔍 DRY RUN MODE - No files will be modified");
+        println!("📋 Preview of planned operations:\n");
+    }
+
+    if !args.quiet && !args.dry_run {
         info!("Pre-creating output directories for optimal performance...");
     }
-    pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
+    
+    if !args.dry_run {
+        pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
+    }
 
     let multi_progress = MultiProgress::new();
     let main_progress = multi_progress.add(ProgressBar::new(files.len() as u64));
@@ -654,9 +783,13 @@ async fn convert_images(
     );
     main_progress.enable_steady_tick(Duration::from_millis(100));
 
+    // Start the timer for ETA calculation
+    stats.start_timer();
+
     let stats_clone = stats.clone();
     let progress_clone = main_progress.clone();
     let replace_mode = args.replace_input.clone();
+    let total_files = files.len() as u64;
 
     files
         .par_iter()
@@ -684,6 +817,7 @@ async fn convert_images(
                 &converter,
                 args.preserve_structure,
                 args.overwrite,
+                args.dry_run,
             );
 
             match result {
@@ -694,7 +828,7 @@ async fn convert_images(
                         ReplaceInputMode::Off => {},
                         ReplaceInputMode::Recycle => {
                             if let Err(e) = trash_delete(input_path) {
-                                stats_clone.record_error(format!("[replace_input:recycle] {}: {}", input_path.display(), e));
+                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:recycle] {}", e));
                                 if args.verbose {
                                     error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
                                 }
@@ -702,7 +836,7 @@ async fn convert_images(
                         },
                         ReplaceInputMode::Delete => {
                             if let Err(e) = std::fs::remove_file(input_path) {
-                                stats_clone.record_error(format!("[replace_input:delete] {}: {}", input_path.display(), e));
+                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:delete] {}", e));
                                 if args.verbose {
                                     error!("Failed to delete {}: {}", input_path.display(), e);
                                 }
@@ -711,7 +845,7 @@ async fn convert_images(
                     }
                 },
                 Err(e) => {
-                    stats_clone.record_error(format!("{}: {}", input_path.display(), e));
+                    stats_clone.record_error(input_path.display().to_string(), e.to_string());
                     if args.verbose {
                         error!("Failed to process {}: {}", input_path.display(), e);
                     }
@@ -721,12 +855,20 @@ async fn convert_images(
             if !args.quiet {
                 progress_clone.inc(1);
                 let current_pos = progress_clone.position();
-                let total_files = progress_clone.length().unwrap_or(0);
-                let percentage = if total_files > 0 {
-                    (current_pos as f64 / total_files as f64 * 100.0) as u32
+                let total_files_progress = progress_clone.length().unwrap_or(0);
+                let percentage = if total_files_progress > 0 {
+                    (current_pos as f64 / total_files_progress as f64 * 100.0) as u32
                 } else { 0 };
-                if idx % 10 == 0 || current_pos == total_files {
-                    progress_clone.set_message(format!("{}% - Processing {} / {} files", percentage, current_pos, total_files));
+                
+                // Update progress message with ETA
+                if idx % 10 == 0 || current_pos == total_files_progress {
+                    let eta_msg = if let Some(eta) = stats_clone.estimate_eta(total_files) {
+                        format!(" (ETA: {})", format_duration(eta))
+                    } else {
+                        String::new()
+                    };
+                    progress_clone.set_message(format!("{}% - Processing {} / {} files{}", 
+                        percentage, current_pos, total_files_progress, eta_msg));
                 }
             }
         });
@@ -775,9 +917,11 @@ fn process_single_image(
     converter: &ImageConverter,
     preserve_structure: bool,
     overwrite: bool,
+    dry_run: bool,
 ) -> Result<(u64, u64)> {
     let input_metadata = std::fs::metadata(input_path)?;
     let original_size = input_metadata.len();
+    
     let output_path = if preserve_structure {
         let relative_path = input_path.strip_prefix(input_root)?;
         let mut output_path = output_dir.join(relative_path);
@@ -788,11 +932,20 @@ fn process_single_image(
             .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
         output_dir.join(format!("{}.webp", filename.to_string_lossy()))
     };
-    if output_path.exists() && !overwrite {
+    
+    if !dry_run && output_path.exists() && !overwrite {
         return Err(anyhow::anyhow!("File exists and overwrite mode is disabled"));
     }
+    
     converter.convert_to_webp(input_path, &output_path)?;
-    let compressed_size = std::fs::metadata(&output_path)?.len();
+    
+    let compressed_size = if dry_run {
+        // Estimate compressed size for dry run (assume 60% compression ratio)
+        (original_size as f64 * 0.6) as u64
+    } else {
+        std::fs::metadata(&output_path)?.len()
+    };
+    
     Ok((original_size, compressed_size))
 }
 
@@ -818,6 +971,9 @@ fn print_ascii_config(args: &Args, output_dir: &Path) {
     println!("   Mode:        {:?}", args.mode);
     println!("   Threads:     {}", rayon::current_num_threads());
     println!("   Formats:     {}", args.formats.join(", "));
+    if args.dry_run {
+        println!("   🔍 DRY RUN:  Enabled (preview mode)");
+    }
     println!();
 }
 

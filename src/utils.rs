@@ -57,22 +57,67 @@ pub fn format_file_size(bytes: u64) -> String {
     }
 }
 
-/// Validate if file is a valid image format
-#[allow(dead_code)]
+/// Validate if file is a valid image format with deep header checking
 pub fn is_valid_image_file(path: &Path) -> bool {
     // First check extension
     let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"];
     
-    if let Some(ext) = get_file_extension(path) {
+    let extension = if let Some(ext) = get_file_extension(path) {
         if !valid_extensions.contains(&ext.as_str()) {
             return false;
         }
+        ext
     } else {
         return false;
+    };
+    
+    // Deep validation: check file headers (magic numbers)
+    validate_image_header(path, &extension)
+}
+
+/// Validate image file headers to prevent processing of corrupted or fake files
+fn validate_image_header(path: &Path, extension: &str) -> bool {
+    use std::fs::File;
+    use std::io::Read;
+    
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    
+    let mut header = [0u8; 16]; // Read first 16 bytes
+    if file.read(&mut header).unwrap_or(0) < 4 {
+        return false; // File too small to be a valid image
     }
     
-    // Could add deeper file header checking here
-    true
+    match extension {
+        "jpg" | "jpeg" => {
+            // JPEG files start with FF D8 and end with FF D9
+            header[0] == 0xFF && header[1] == 0xD8
+        },
+        "png" => {
+            // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+            header[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        },
+        "gif" => {
+            // GIF signature: "GIF87a" or "GIF89a"
+            &header[0..6] == b"GIF87a" || &header[0..6] == b"GIF89a"
+        },
+        "bmp" => {
+            // BMP signature: "BM"
+            &header[0..2] == b"BM"
+        },
+        "tiff" => {
+            // TIFF signatures: "II*\0" (little-endian) or "MM\0*" (big-endian)
+            (&header[0..4] == [0x49, 0x49, 0x2A, 0x00]) || 
+            (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A])
+        },
+        "webp" => {
+            // WebP signature: "RIFF" at start and "WEBP" at offset 8
+            &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP"
+        },
+        _ => true, // For unknown extensions, assume valid
+    }
 }
 
 /// Calculate compression ratio between two file sizes
@@ -97,10 +142,99 @@ pub fn get_optimal_thread_count() -> usize {
 
 /// Check if there's enough disk space
 #[allow(dead_code)]
-pub fn check_disk_space(_path: &Path, _required_space: u64) -> Result<bool> {
-    // Platform-specific disk space checking would go here
-    // Simplified version always returns true
+pub fn check_disk_space(path: &Path, required_space: u64) -> Result<bool> {
+    // Cross-platform disk space checking
+    use std::fs;
+    
+    if let Ok(metadata) = fs::metadata(path) {
+        if metadata.is_dir() {
+            // For directories, check the parent filesystem
+            return check_filesystem_space(path, required_space);
+        }
+    }
+    
+    // For files, check the parent directory
+    if let Some(parent) = path.parent() {
+        check_filesystem_space(parent, required_space)
+    } else {
+        // Fallback: assume sufficient space
+        Ok(true)
+    }
+}
+
+#[cfg(windows)]
+fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+    
+    let path_wide: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    
+    let mut free_bytes = 0u64;
+    let mut total_bytes = 0u64;
+    
+    unsafe {
+        let result = windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            path_wide.as_ptr(),
+            &mut free_bytes,
+            &mut total_bytes,
+            ptr::null_mut(),
+        );
+        
+        if result != 0 {
+            Ok(free_bytes >= required_space)
+        } else {
+            // If we can't get disk space, assume it's available
+            Ok(true)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
+    use std::ffi::CString;
+    use std::mem;
+    
+    let path_cstr = CString::new(path.to_string_lossy().as_bytes())?;
+    
+    unsafe {
+        let mut statvfs: libc::statvfs = mem::zeroed();
+        let result = libc::statvfs(path_cstr.as_ptr(), &mut statvfs);
+        
+        if result == 0 {
+            let available_bytes = statvfs.f_bavail * statvfs.f_frsize;
+            Ok(available_bytes >= required_space)
+        } else {
+            // If we can't get disk space, assume it's available
+            Ok(true)
+        }
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn check_filesystem_space(_path: &Path, _required_space: u64) -> Result<bool> {
+    // For other platforms, assume space is available
     Ok(true)
+}
+
+/// Format duration for human-readable display
+pub fn format_duration(duration: std::time::Duration) -> String {
+    let total_seconds = duration.as_secs();
+    
+    if total_seconds < 60 {
+        format!("{}s", total_seconds)
+    } else if total_seconds < 3600 {
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        format!("{}h {}m", hours, minutes)
+    }
 }
 
 /// Create safe output filename (avoid path traversal attacks)

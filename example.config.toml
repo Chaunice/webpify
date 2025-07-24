@@ -18,6 +18,8 @@ prescan = true
 replace_input = "off"
 # Force re-encoding of .webp files (default: false)
 reencode_webp = false
+# Dry run mode - preview operations without making changes (default: false)
+dry_run = false
 
 [compression]
 # WebP quality (0-100)

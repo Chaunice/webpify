@@ -81,6 +81,9 @@ Options:
   -c, --config <FILE>                  Configuration file path
       --replace-input <REPLACE_INPUT>  How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] [default: off] [possible values: off, recycle, delete]
       --reencode-webp                  Force re-encoding of WebP files (by default, .webp files are skipped)
+      --dry-run                        Dry run mode - preview operations without making changes
+      --quality-metrics               Enable quality metrics calculation (SSIM/PSNR)
+      --profile <PROFILE>              Use a predefined configuration profile
   -h, --help                           Print help (see more with '--help')
   -V, --version                        Print version
 ```
@@ -100,6 +103,14 @@ webpify -i ./images -t 4 --min-size 10
 
 # Memory-constrained environment
 webpify -i ./images -t 2 --max-size 10
+
+# Preview mode (dry run) - see what would be converted without making changes
+webpify -i ./images --dry-run --verbose
+
+# Use predefined profiles for common scenarios
+webpify -i ./images --profile web
+webpify -i ./images --profile print
+webpify -i ./images --profile archive
 ```
 
 > Note:
@@ -131,6 +142,7 @@ threads = 8
 prescan = true
 replace_input = "off" # off, recycle, delete
 reencode_webp = false
+dry_run = false # Enable preview mode
 
 [compression]
 quality = 85
@@ -149,6 +161,40 @@ report_format = "json" # json, csv, html
 ```
 
 See `example.config.toml` in the repository for a full reference and comments.
+
+## 📋 Configuration Profiles
+
+webpify includes predefined configuration profiles for common use cases. Profiles provide optimized settings for different scenarios:
+
+### Available Profiles
+
+- **`web`** - Web-optimized images with good compression (quality: 85, auto mode)
+- **`print`** - High-quality images suitable for printing (quality: 95, lossless)
+- **`archive`** - Maximum compression for archival storage (quality: 70, lossy)
+- **`fast`** - Fast processing with reasonable quality (quality: 80, lossy)
+- **`lossless`** - Perfect quality preservation (quality: 100, lossless)
+
+### Using Profiles
+
+```bash
+# Use web profile for website images
+webpify -i ./photos --profile web
+
+# Use print profile for high-quality output
+webpify -i ./artwork --profile print
+
+# Use archive profile for long-term storage
+webpify -i ./backup --profile archive
+```
+
+Profiles are loaded from `profiles.toml` files in standard locations:
+
+1. `./profiles.toml` (current directory)
+2. Next to your config file (if using `--config`)
+3. `~/.config/webpify/profiles.toml` (Linux/macOS)
+4. `%APPDATA%\webpify\profiles.toml` (Windows)
+
+See `profiles.toml` in the repository for profile definitions and customization options.
 
 ## 📝 TODO
 

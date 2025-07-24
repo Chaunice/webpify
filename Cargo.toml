@@ -15,6 +15,7 @@ path = "src/main.rs"
 # Image processing
 image = { version = "0.25.6", features = ["webp", "jpeg", "png", "gif", "bmp", "tiff"] }
 webp = "0.3.0"
+imageproc = "0.25.0"  # For advanced image analysis
 
 # CLI and argument parsing
 clap = { version = "4.0", features = ["derive", "color"] }
@@ -43,3 +44,10 @@ chrono = { version = "0.4", features = ["serde"] }
 num_cpus = "1.16"
 trash = "5.2.2"
 dirs = "6.0.0"
+
+# Platform-specific dependencies
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
