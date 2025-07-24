@@ -188,6 +188,7 @@ webpify -i ./backup --profile archive
 ```
 
 Profiles are loaded from `profiles.toml` files in standard locations:
+
 1. `./profiles.toml` (current directory)
 2. Next to your config file (if using `--config`)
 3. `~/.config/webpify/profiles.toml` (Linux/macOS)
