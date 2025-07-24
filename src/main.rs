@@ -19,7 +19,7 @@ mod utils;
 
 use converter::ImageConverter;
 use stats::ConversionStats;
-use utils::format_duration;
+use utils::{format_duration, is_valid_image_file};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -171,6 +171,10 @@ pub struct Args {
     /// Dry run mode - preview operations without making changes
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
+
+    /// Enable quality metrics calculation (SSIM/PSNR)
+    #[arg(long, default_value_t = false)]
+    pub quality_metrics: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -590,6 +594,8 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
         .map(|f| f.to_lowercase())
         .collect();
     
+    let verbose = args.verbose; // Capture for use in closure
+    
     if !args.quiet {
         info!("Scanning directory: {}", args.input.display());
     }
@@ -609,6 +615,14 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
                 .map(|ext| ext.to_lowercase())?;
             
             if !supported_extensions.contains(&extension) {
+                return None;
+            }
+            
+            // Deep validation: check file headers for integrity
+            if !is_valid_image_file(path) {
+                if verbose {
+                    eprintln!("Warning: Skipping invalid image file: {}", path.display());
+                }
                 return None;
             }
             

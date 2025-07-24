@@ -57,22 +57,67 @@ pub fn format_file_size(bytes: u64) -> String {
     }
 }
 
-/// Validate if file is a valid image format
-#[allow(dead_code)]
+/// Validate if file is a valid image format with deep header checking
 pub fn is_valid_image_file(path: &Path) -> bool {
     // First check extension
     let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"];
     
-    if let Some(ext) = get_file_extension(path) {
+    let extension = if let Some(ext) = get_file_extension(path) {
         if !valid_extensions.contains(&ext.as_str()) {
             return false;
         }
+        ext
     } else {
         return false;
+    };
+    
+    // Deep validation: check file headers (magic numbers)
+    validate_image_header(path, &extension)
+}
+
+/// Validate image file headers to prevent processing of corrupted or fake files
+fn validate_image_header(path: &Path, extension: &str) -> bool {
+    use std::fs::File;
+    use std::io::Read;
+    
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    
+    let mut header = [0u8; 16]; // Read first 16 bytes
+    if file.read(&mut header).unwrap_or(0) < 4 {
+        return false; // File too small to be a valid image
     }
     
-    // Could add deeper file header checking here
-    true
+    match extension {
+        "jpg" | "jpeg" => {
+            // JPEG files start with FF D8 and end with FF D9
+            header[0] == 0xFF && header[1] == 0xD8
+        },
+        "png" => {
+            // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+            header[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        },
+        "gif" => {
+            // GIF signature: "GIF87a" or "GIF89a"
+            &header[0..6] == b"GIF87a" || &header[0..6] == b"GIF89a"
+        },
+        "bmp" => {
+            // BMP signature: "BM"
+            &header[0..2] == b"BM"
+        },
+        "tiff" => {
+            // TIFF signatures: "II*\0" (little-endian) or "MM\0*" (big-endian)
+            (&header[0..4] == [0x49, 0x49, 0x2A, 0x00]) || 
+            (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A])
+        },
+        "webp" => {
+            // WebP signature: "RIFF" at start and "WEBP" at offset 8
+            &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP"
+        },
+        _ => true, // For unknown extensions, assume valid
+    }
 }
 
 /// Calculate compression ratio between two file sizes
