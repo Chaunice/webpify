@@ -1811,6 +1811,7 @@ dependencies = [
  "humansize",
  "image",
  "indicatif",
+ "libc",
  "log",
  "num_cpus",
  "rayon",
@@ -1821,6 +1822,7 @@ dependencies = [
  "trash",
  "walkdir",
  "webp",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

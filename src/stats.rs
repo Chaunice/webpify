@@ -7,10 +7,21 @@ pub struct ConversionStats {
     pub processed_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub skipped_count: Arc<AtomicU64>,
+    #[allow(dead_code)]
+    pub retry_count: Arc<AtomicU64>,
     pub original_size: Arc<AtomicU64>,
     pub compressed_size: Arc<AtomicU64>,
     format_stats: Arc<Mutex<HashMap<String, u64>>>,
-    errors: Arc<Mutex<Vec<String>>>,
+    errors: Arc<Mutex<Vec<ErrorRecord>>>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct ErrorRecord {
+    pub file_path: String,
+    pub error_message: String,
+    pub retry_count: u32,
+    pub timestamp: std::time::SystemTime,
 }
 
 impl ConversionStats {
@@ -19,6 +30,7 @@ impl ConversionStats {
             processed_count: Arc::new(AtomicU64::new(0)),
             error_count: Arc::new(AtomicU64::new(0)),
             skipped_count: Arc::new(AtomicU64::new(0)),
+            retry_count: Arc::new(AtomicU64::new(0)),
             original_size: Arc::new(AtomicU64::new(0)),
             compressed_size: Arc::new(AtomicU64::new(0)),
             format_stats: Arc::new(Mutex::new(HashMap::new())),
@@ -32,10 +44,28 @@ impl ConversionStats {
         self.compressed_size.fetch_add(compressed_size, Ordering::Relaxed);
     }
 
-    pub fn record_error(&self, error: String) {
+    pub fn record_error(&self, file_path: String, error: String) {
         self.error_count.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut errors) = self.errors.lock() {
-            errors.push(error);
+            errors.push(ErrorRecord {
+                file_path,
+                error_message: error,
+                retry_count: 0,
+                timestamp: std::time::SystemTime::now(),
+            });
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn record_retry(&self, file_path: &str) {
+        self.retry_count.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut errors) = self.errors.lock() {
+            // Update retry count for the most recent error for this file
+            if let Some(error_record) = errors.iter_mut()
+                .rev()
+                .find(|e| e.file_path == file_path) {
+                error_record.retry_count += 1;
+            }
         }
     }
 
@@ -76,6 +106,13 @@ impl ConversionStats {
     }
 
     pub fn get_errors(&self) -> Vec<String> {
+        self.errors.lock()
+            .map(|errors| errors.iter().map(|e| format!("{}: {}", e.file_path, e.error_message)).collect())
+            .unwrap_or_default()
+    }
+
+    #[allow(dead_code)]
+    pub fn get_error_records(&self) -> Vec<ErrorRecord> {
         self.errors.lock()
             .map(|errors| errors.clone())
             .unwrap_or_default()

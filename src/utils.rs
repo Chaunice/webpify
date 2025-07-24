@@ -97,9 +97,81 @@ pub fn get_optimal_thread_count() -> usize {
 
 /// Check if there's enough disk space
 #[allow(dead_code)]
-pub fn check_disk_space(_path: &Path, _required_space: u64) -> Result<bool> {
-    // Platform-specific disk space checking would go here
-    // Simplified version always returns true
+pub fn check_disk_space(path: &Path, required_space: u64) -> Result<bool> {
+    // Cross-platform disk space checking
+    use std::fs;
+    
+    if let Ok(metadata) = fs::metadata(path) {
+        if metadata.is_dir() {
+            // For directories, check the parent filesystem
+            return check_filesystem_space(path, required_space);
+        }
+    }
+    
+    // For files, check the parent directory
+    if let Some(parent) = path.parent() {
+        check_filesystem_space(parent, required_space)
+    } else {
+        // Fallback: assume sufficient space
+        Ok(true)
+    }
+}
+
+#[cfg(windows)]
+fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+    
+    let path_wide: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    
+    let mut free_bytes = 0u64;
+    let mut total_bytes = 0u64;
+    
+    unsafe {
+        let result = windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            path_wide.as_ptr(),
+            &mut free_bytes,
+            &mut total_bytes,
+            ptr::null_mut(),
+        );
+        
+        if result != 0 {
+            Ok(free_bytes >= required_space)
+        } else {
+            // If we can't get disk space, assume it's available
+            Ok(true)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
+    use std::ffi::CString;
+    use std::mem;
+    
+    let path_cstr = CString::new(path.to_string_lossy().as_bytes())?;
+    
+    unsafe {
+        let mut statvfs: libc::statvfs = mem::zeroed();
+        let result = libc::statvfs(path_cstr.as_ptr(), &mut statvfs);
+        
+        if result == 0 {
+            let available_bytes = statvfs.f_bavail * statvfs.f_frsize;
+            Ok(available_bytes >= required_space)
+        } else {
+            // If we can't get disk space, assume it's available
+            Ok(true)
+        }
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn check_filesystem_space(_path: &Path, _required_space: u64) -> Result<bool> {
+    // For other platforms, assume space is available
     Ok(true)
 }
 

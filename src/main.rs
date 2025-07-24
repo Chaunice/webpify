@@ -694,7 +694,7 @@ async fn convert_images(
                         ReplaceInputMode::Off => {},
                         ReplaceInputMode::Recycle => {
                             if let Err(e) = trash_delete(input_path) {
-                                stats_clone.record_error(format!("[replace_input:recycle] {}: {}", input_path.display(), e));
+                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:recycle] {}", e));
                                 if args.verbose {
                                     error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
                                 }
@@ -702,7 +702,7 @@ async fn convert_images(
                         },
                         ReplaceInputMode::Delete => {
                             if let Err(e) = std::fs::remove_file(input_path) {
-                                stats_clone.record_error(format!("[replace_input:delete] {}: {}", input_path.display(), e));
+                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:delete] {}", e));
                                 if args.verbose {
                                     error!("Failed to delete {}: {}", input_path.display(), e);
                                 }
@@ -711,7 +711,7 @@ async fn convert_images(
                     }
                 },
                 Err(e) => {
-                    stats_clone.record_error(format!("{}: {}", input_path.display(), e));
+                    stats_clone.record_error(input_path.display().to_string(), e.to_string());
                     if args.verbose {
                         error!("Failed to process {}: {}", input_path.display(), e);
                     }
