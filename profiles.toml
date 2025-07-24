@@ -1,0 +1,48 @@
+# webpify Configuration Profiles
+# Save as profiles.toml in your config directory
+
+[profiles.web]
+# Optimized for web images - balance of quality and size
+description = "Web-optimized images with good compression"
+quality = 85
+mode = "auto"
+max_size = 5  # MB
+preserve_structure = true
+formats = ["jpg", "jpeg", "png", "gif", "webp"]
+
+[profiles.print]
+# High quality for print materials
+description = "High-quality images suitable for printing"
+quality = 95
+mode = "lossless"
+max_size = 0  # No limit
+preserve_structure = true
+formats = ["jpg", "jpeg", "png", "tiff", "bmp"]
+
+[profiles.archive]
+# Maximum compression for long-term storage
+description = "Maximum compression for archival storage"
+quality = 70
+mode = "lossy"
+max_size = 0  # No limit
+preserve_structure = true
+formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+
+[profiles.fast]
+# Fast processing with minimal quality loss
+description = "Fast processing with reasonable quality"
+quality = 80
+mode = "lossy"
+max_size = 10  # MB - skip very large files
+preserve_structure = false
+formats = ["jpg", "jpeg", "png"]
+threads = 0  # Use all available threads
+
+[profiles.lossless]
+# Perfect quality preservation
+description = "Lossless compression - perfect quality"
+quality = 100
+mode = "lossless"
+max_size = 0
+preserve_structure = true
+formats = ["png", "gif", "bmp", "tiff", "webp"]

@@ -27,6 +27,18 @@ pub struct Config {
     pub compression: Option<CompressionConfig>,
     pub filtering: Option<FilteringConfig>,
     pub output: Option<OutputConfig>,
+    pub profiles: Option<std::collections::HashMap<String, ProfileConfig>>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProfileConfig {
+    pub description: Option<String>,
+    pub quality: Option<u8>,
+    pub mode: Option<String>,
+    pub max_size: Option<u64>,
+    pub preserve_structure: Option<bool>,
+    pub formats: Option<Vec<String>>,
+    pub threads: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -160,6 +172,10 @@ pub struct Args {
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
+    /// Use a predefined configuration profile
+    #[arg(long, value_name = "PROFILE")]
+    pub profile: Option<String>,
+
     /// How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete]
     #[arg(long, value_enum, default_value = "off")]
     pub replace_input: ReplaceInputMode,
@@ -268,6 +284,12 @@ async fn main() -> Result<()> {
 
     if let Some(config_path) = config_path {
         load_config(&mut args, &config_path)?;
+    }
+    
+    // Load profile if specified
+    let profile_name = args.profile.clone();
+    if let Some(profile_name) = profile_name {
+        load_profile(&mut args, &profile_name)?;
     }
     
     // Initialize logging system
@@ -513,6 +535,81 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
     }
     
     info!("Loaded configuration from: {}", config_path.display());
+    Ok(())
+}
+
+fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
+    // Search for profiles.toml in standard locations
+    let mut profile_candidates = Vec::new();
+    
+    // 1. Current directory
+    profile_candidates.push(std::env::current_dir().unwrap().join("profiles.toml"));
+    // 2. Next to the config file if specified
+    if let Some(config_path) = &args.config {
+        if let Some(parent) = config_path.parent() {
+            profile_candidates.push(parent.join("profiles.toml"));
+        }
+    }
+    // 3. XDG config home (Linux/macOS)
+    if let Some(xdg_config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+        profile_candidates.push(PathBuf::from(xdg_config_home).join("webpify/profiles.toml"));
+    } else if let Some(home) = dirs::home_dir() {
+        profile_candidates.push(home.join(".config/webpify/profiles.toml"));
+    }
+    // 4. Windows: %APPDATA%\\webpify\\profiles.toml
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        profile_candidates.push(PathBuf::from(appdata).join("webpify/profiles.toml"));
+    }
+    
+    let profiles_path = profile_candidates.into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| anyhow::anyhow!("No profiles.toml file found. Use built-in profiles or create a profiles.toml file."))?;
+
+    let profiles_content = std::fs::read_to_string(&profiles_path)
+        .with_context(|| format!("Failed to read profiles file: {}", profiles_path.display()))?;
+
+    let profiles_config: std::collections::HashMap<String, std::collections::HashMap<String, ProfileConfig>> = 
+        toml::from_str(&profiles_content)
+        .with_context(|| format!("Failed to parse profiles file: {}", profiles_path.display()))?;
+
+    let profile = profiles_config
+        .get("profiles")
+        .and_then(|profiles| profiles.get(profile_name))
+        .ok_or_else(|| anyhow::anyhow!("Profile '{}' not found in profiles.toml", profile_name))?;
+
+    // Apply profile settings to args
+    if let Some(quality) = profile.quality {
+        args.quality = quality;
+    }
+    if let Some(mode_str) = &profile.mode {
+        match mode_str.to_lowercase().as_str() {
+            "lossless" => args.mode = CompressionMode::Lossless,
+            "lossy" => args.mode = CompressionMode::Lossy,
+            "auto" => args.mode = CompressionMode::Auto,
+            _ => warn!("Invalid compression mode in profile: {}", mode_str),
+        }
+    }
+    if let Some(max_size) = profile.max_size {
+        if max_size > 0 {
+            args.max_size = Some(max_size);
+        }
+    }
+    if let Some(preserve) = profile.preserve_structure {
+        args.preserve_structure = preserve;
+    }
+    if let Some(formats) = &profile.formats {
+        args.formats = formats.clone();
+    }
+    if let Some(threads) = profile.threads {
+        if threads > 0 {
+            args.threads = Some(threads);
+        }
+    }
+
+    info!("Loaded profile '{}' from: {}", profile_name, profiles_path.display());
+    if let Some(description) = &profile.description {
+        info!("Profile description: {}", description);
+    }
     Ok(())
 }
 
