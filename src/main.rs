@@ -757,6 +757,8 @@ async fn convert_images(
     files: &[PathBuf],
     output_dir: &Path,
 ) -> Result<ConversionStats> {
+    use crossbeam_channel::unbounded;
+    use std::sync::Arc;
     let stats = ConversionStats::new();
     let converter = ImageConverter::new_with_dry_run(args.quality, &args.mode, args.dry_run);
 
@@ -786,93 +788,123 @@ async fn convert_images(
     // Start the timer for ETA calculation
     stats.start_timer();
 
+    // 克隆/包装所有需要 move 进闭包的数据
     let stats_clone = stats.clone();
-    let progress_clone = main_progress.clone();
     let replace_mode = args.replace_input.clone();
+    let preserve_structure = args.preserve_structure;
+    let overwrite = args.overwrite;
+    let dry_run = args.dry_run;
+    let reencode_webp = args.reencode_webp;
+    let verbose = args.verbose;
+    let input_root = Arc::new(args.input.clone());
+    let files_arc = Arc::new(files.to_vec());
+    let output_dir_arc = Arc::new(output_dir.to_path_buf());
+    let converter = Arc::new(converter);
     let total_files = files.len() as u64;
 
-    files
-        .par_iter()
-        .enumerate()
-        .for_each(|(idx, input_path)| {
-            // Best practice: skip already-WebP files by default, unless --reencode-webp is set
-            if let Some(ext) = input_path.extension().and_then(|e| e.to_str()) {
-                if ext.eq_ignore_ascii_case("webp") && !args.reencode_webp {
-                    stats_clone.skipped_count.fetch_add(1, Ordering::Relaxed);
-                    if args.verbose {
-                        info!("Skipping already-WebP file: {}", input_path.display());
-                    }
-                    if !args.quiet {
-                        progress_clone.inc(1);
-                    }
-                    return;
-                }
-            }
+    // 新增：使用 channel 汇报进度
+    let (tx, rx) = unbounded();
 
-            // Process the image and handle result
-            let result = process_single_image(
-                input_path,
-                output_dir,
-                &args.input,
-                &converter,
-                args.preserve_structure,
-                args.overwrite,
-                args.dry_run,
-            );
-
-            match result {
-                Ok((original_size, compressed_size)) => {
-                    stats_clone.record_success(original_size, compressed_size);
-                    // Best practice: handle input file replacement after successful conversion
-                    match replace_mode {
-                        ReplaceInputMode::Off => {},
-                        ReplaceInputMode::Recycle => {
-                            if let Err(e) = trash_delete(input_path) {
-                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:recycle] {}", e));
-                                if args.verbose {
-                                    error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
-                                }
+    rayon::spawn_fifo({
+        let stats_clone = stats_clone.clone();
+        let replace_mode = replace_mode.clone();
+        let input_root = input_root.clone();
+        let files_arc = files_arc.clone();
+        let output_dir_arc = output_dir_arc.clone();
+        let converter = converter.clone();
+        move || {
+            files_arc
+                .par_iter()
+                .enumerate()
+                .for_each(|(idx, input_path)| {
+                    // Best practice: skip already-WebP files by default, unless --reencode-webp is set
+                    if let Some(ext) = input_path.extension().and_then(|e| e.to_str()) {
+                        if ext.eq_ignore_ascii_case("webp") && !reencode_webp {
+                            stats_clone.skipped_count.fetch_add(1, Ordering::Relaxed);
+                            if verbose {
+                                info!("Skipping already-WebP file: {}", input_path.display());
                             }
-                        },
-                        ReplaceInputMode::Delete => {
-                            if let Err(e) = std::fs::remove_file(input_path) {
-                                stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:delete] {}", e));
-                                if args.verbose {
-                                    error!("Failed to delete {}: {}", input_path.display(), e);
-                                }
-                            }
-                        },
-                    }
-                },
-                Err(e) => {
-                    stats_clone.record_error(input_path.display().to_string(), e.to_string());
-                    if args.verbose {
-                        error!("Failed to process {}: {}", input_path.display(), e);
-                    }
-                }
-            }
-
-            if !args.quiet {
-                progress_clone.inc(1);
-                let current_pos = progress_clone.position();
-                let total_files_progress = progress_clone.length().unwrap_or(0);
-                let percentage = if total_files_progress > 0 {
-                    (current_pos as f64 / total_files_progress as f64 * 100.0) as u32
-                } else { 0 };
-                
-                // Update progress message with ETA
-                if idx % 10 == 0 || current_pos == total_files_progress {
-                    progress_clone.set_message(format!("{}/{} ({}%) ETA: {}", 
-                        current_pos, total_files_progress, percentage,
-                        if let Some(eta) = stats_clone.estimate_eta(total_files) {
-                            format_duration(eta)
-                        } else {
-                            "calculating...".to_string()
+                            let _ = tx.send((1, idx));
+                            return;
                         }
-                    ));
+                    }
+
+                    // Process the image and handle result
+                    let result = process_single_image(
+                        input_path,
+                        &output_dir_arc,
+                        &input_root,
+                        &converter,
+                        preserve_structure,
+                        overwrite,
+                        dry_run,
+                    );
+
+                    match result {
+                        Ok((original_size, compressed_size)) => {
+                            stats_clone.record_success(original_size, compressed_size);
+                            // Best practice: handle input file replacement after successful conversion
+                            match replace_mode {
+                                ReplaceInputMode::Off => {},
+                                ReplaceInputMode::Recycle => {
+                                    if let Err(e) = trash_delete(input_path) {
+                                        stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:recycle] {}", e));
+                                        if verbose {
+                                            error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
+                                        }
+                                    }
+                                },
+                                ReplaceInputMode::Delete => {
+                                    if let Err(e) = std::fs::remove_file(input_path) {
+                                        stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:delete] {}", e));
+                                        if verbose {
+                                            error!("Failed to delete {}: {}", input_path.display(), e);
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                        Err(e) => {
+                            stats_clone.record_error(input_path.display().to_string(), e.to_string());
+                            if verbose {
+                                error!("Failed to process {}: {}", input_path.display(), e);
+                            }
+                        }
+                    }
+
+                    let _ = tx.send((1, idx));
+                });
+            // 发送结束信号
+            let _ = tx.send((0, usize::MAX));
+        }
+    });
+
+    // 主线程统一刷新进度条
+    let mut _processed = 0u64;
+    loop {
+        let (inc, idx) = rx.recv().unwrap();
+        if inc == 0 && idx == usize::MAX {
+            break;
+        }
+        _processed += inc as u64;
+        if !args.quiet {
+            main_progress.inc(inc as u64);
+            let current_pos = main_progress.position();
+            let total_files_progress = main_progress.length().unwrap_or(0);
+            let percentage = if total_files_progress > 0 {
+                (current_pos as f64 / total_files_progress as f64 * 100.0) as u32
+            } else { 0 };
+            // 每次都刷新 set_message，提升流畅度
+            main_progress.set_message(format!("{}/{} ({}%) ETA: {}",
+                current_pos, total_files_progress, percentage,
+                if let Some(eta) = stats_clone.estimate_eta(total_files) {
+                    format_duration(eta)
+                } else {
+                    "calculating...".to_string()
                 }
-            }
-        });
+            ));
+        }
+    }
 
     if !args.quiet {
         main_progress.finish_with_message("Conversion completed!");
