@@ -777,7 +777,7 @@ async fn convert_images(
     let main_progress = multi_progress.add(ProgressBar::new(files.len() as u64));
     main_progress.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {msg}")
             .unwrap()
             .progress_chars("#>-")
     );
@@ -862,13 +862,14 @@ async fn convert_images(
                 
                 // Update progress message with ETA
                 if idx % 10 == 0 || current_pos == total_files_progress {
-                    let eta_msg = if let Some(eta) = stats_clone.estimate_eta(total_files) {
-                        format!(" (ETA: {})", format_duration(eta))
-                    } else {
-                        String::new()
-                    };
-                    progress_clone.set_message(format!("{}% - Processing {} / {} files{}", 
-                        percentage, current_pos, total_files_progress, eta_msg));
+                    progress_clone.set_message(format!("{}/{} ({}%) ETA: {}", 
+                        current_pos, total_files_progress, percentage,
+                        if let Some(eta) = stats_clone.estimate_eta(total_files) {
+                            format_duration(eta)
+                        } else {
+                            "calculating...".to_string()
+                        }
+                    ));
                 }
             }
         });
