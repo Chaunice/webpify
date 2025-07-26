@@ -1,17 +1,17 @@
 use anyhow::{Context, Result};
-use clap::{Parser, ValueEnum, CommandFactory};
 use chrono::{DateTime, Utc};
+use clap::{CommandFactory, Parser, ValueEnum};
 use humansize::{format_size, DECIMAL};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{info, warn, error};
+use log::{error, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use walkdir::WalkDir;
 use trash::delete as trash_delete;
+use walkdir::WalkDir;
 
 mod converter;
 mod stats;
@@ -76,7 +76,7 @@ pub struct OutputConfig {
 }
 
 /// webpify - High-performance batch image to WebP converter
-/// 
+///
 /// Efficiently converts various image formats to WebP with compression optimization and parallel processing
 #[derive(Parser)]
 #[command(name = "webpify")]
@@ -94,8 +94,7 @@ Features:
 • Recursive directory scanning with nested folder support
 • Comprehensive conversion reports and performance analysis
 "#)]
-#[command(before_help = 
-r#"
+#[command(before_help = r#"
                     __                        ___             
                    /\ \                __   /'___\            
  __  __  __     __ \ \ \____   _____  /\_\ /\ \__/  __  __    
@@ -245,7 +244,6 @@ pub struct ConversionReport {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     if std::env::args().len() == 1 {
         // print_ascii_banner();
         Args::command().print_help()?;
@@ -285,50 +283,49 @@ async fn main() -> Result<()> {
     if let Some(config_path) = config_path {
         load_config(&mut args, &config_path)?;
     }
-    
+
     // Load profile if specified
     let profile_name = args.profile.clone();
     if let Some(profile_name) = profile_name {
         load_profile(&mut args, &profile_name)?;
     }
-    
+
     // Initialize logging system
     init_logging(&args)?;
-    
+
     // Validate arguments
     validate_args(&args)?;
-    
+
     // Set up the thread pool
     setup_thread_pool(args.threads);
-    
+
     // Create output directory
     let output_dir = get_output_dir(&args)?;
-    std::fs::create_dir_all(&output_dir)
-        .context("Failed to create output directory")?;
-    
+    std::fs::create_dir_all(&output_dir).context("Failed to create output directory")?;
+
     if !args.quiet {
         print_ascii_banner();
         print_ascii_config(&args, &output_dir);
     }
-    
+
     let start_time = Instant::now();
     let start_time_utc = Utc::now();
-    
+
     // Scan input files
     let files = if args.prescan {
         scan_input_files(&args).await?
     } else {
         scan_files_streaming(&args)?
     };
-    
+
     if files.is_empty() {
         warn!("No supported image files found in the specified directory");
-        
+
         // Generate empty report if requested
         if args.report {
             let end_time_utc = Utc::now();
             let duration = start_time.elapsed();
-            
+
             let empty_report = ConversionReport {
                 start_time: start_time_utc,
                 end_time: end_time_utc,
@@ -348,30 +345,32 @@ async fn main() -> Result<()> {
                 quality: args.quality,
                 mode: format!("{:?}", args.mode),
                 format_stats: HashMap::new(),
-                errors: vec!["No supported image files found in the specified directory".to_string()],
+                errors: vec![
+                    "No supported image files found in the specified directory".to_string()
+                ],
             };
-            
+
             generate_report(&empty_report, &args.report_format)?;
         }
-        
+
         return Ok(());
     }
-    
+
     if !args.quiet {
         info!("Found {} files, starting conversion...", files.len());
     }
-    
+
     // Execute conversion
     let stats = convert_images(&args, &files, &output_dir).await?;
-    
+
     let duration = start_time.elapsed();
     let end_time_utc = Utc::now();
-    
+
     // Display results
     if !args.quiet {
         print_ascii_results(&stats, duration);
     }
-    
+
     // Generate report
     if args.report {
         let report = ConversionReport {
@@ -387,18 +386,20 @@ async fn main() -> Result<()> {
             original_size: stats.original_size.load(Ordering::Relaxed),
             compressed_size: stats.compressed_size.load(Ordering::Relaxed),
             compression_ratio: stats.get_compression_ratio(),
-            files_per_second: stats.processed_count.load(Ordering::Relaxed) as f64 / duration.as_secs_f64(),
-            bytes_per_second: (stats.compressed_size.load(Ordering::Relaxed) as f64 / duration.as_secs_f64()) as u64,
+            files_per_second: stats.processed_count.load(Ordering::Relaxed) as f64
+                / duration.as_secs_f64(),
+            bytes_per_second: (stats.compressed_size.load(Ordering::Relaxed) as f64
+                / duration.as_secs_f64()) as u64,
             thread_count: rayon::current_num_threads(),
             quality: args.quality,
             mode: format!("{:?}", args.mode),
             format_stats: stats.get_format_stats(),
             errors: stats.get_errors(),
         };
-        
+
         generate_report(&report, &args.report_format)?;
     }
-    
+
     Ok(())
 }
 
@@ -407,13 +408,13 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
         warn!("Config file not found: {}", config_path.display());
         return Ok(());
     }
-    
+
     let config_content = std::fs::read_to_string(config_path)
         .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
-    
+
     let config: Config = toml::from_str(&config_content)
         .with_context(|| format!("Failed to parse config file: {}", config_path.display()))?;
-    
+
     // Apply config values if they weren't explicitly set via CLI
     if let Some(general) = &config.general {
         if args.input.as_os_str().is_empty() {
@@ -469,14 +470,15 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
             }
         }
     }
-    
+
     if let Some(compression) = &config.compression {
         if let Some(quality) = compression.quality {
-            if args.quality == 80 { // default value
+            if args.quality == 80 {
+                // default value
                 args.quality = quality;
             }
         }
-        
+
         if let Some(mode_str) = &compression.mode {
             match mode_str.to_lowercase().as_str() {
                 "lossless" => args.mode = CompressionMode::Lossless,
@@ -486,44 +488,45 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
             }
         }
     }
-    
+
     if let Some(filtering) = &config.filtering {
         if let Some(formats) = &filtering.formats {
             args.formats = formats.clone();
         }
-        
+
         if let Some(min_size) = filtering.min_size {
-            if args.min_size == 1 { // default value
+            if args.min_size == 1 {
+                // default value
                 args.min_size = min_size;
             }
         }
-        
+
         if let Some(max_size) = filtering.max_size {
             if max_size > 0 {
                 args.max_size = Some(max_size);
             }
         }
     }
-    
+
     if let Some(output) = &config.output {
         if let Some(verbose) = output.verbose {
             if !args.verbose {
                 args.verbose = verbose;
             }
         }
-        
+
         if let Some(quiet) = output.quiet {
             if !args.quiet {
                 args.quiet = quiet;
             }
         }
-        
+
         if let Some(generate_report) = output.generate_report {
             if !args.report {
                 args.report = generate_report;
             }
         }
-        
+
         if let Some(report_format_str) = &output.report_format {
             match report_format_str.to_lowercase().as_str() {
                 "json" => args.report_format = ReportFormat::Json,
@@ -533,7 +536,7 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
             }
         }
     }
-    
+
     info!("Loaded configuration from: {}", config_path.display());
     Ok(())
 }
@@ -541,7 +544,7 @@ fn load_config(args: &mut Args, config_path: &Path) -> Result<()> {
 fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
     // Search for profiles.toml in standard locations
     let mut profile_candidates = Vec::new();
-    
+
     // 1. Current directory
     profile_candidates.push(std::env::current_dir().unwrap().join("profiles.toml"));
     // 2. Next to the config file if specified
@@ -560,7 +563,7 @@ fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
     if let Some(appdata) = std::env::var_os("APPDATA") {
         profile_candidates.push(PathBuf::from(appdata).join("webpify/profiles.toml"));
     }
-    
+
     let profiles_path = profile_candidates.into_iter()
         .find(|p| p.exists())
         .ok_or_else(|| anyhow::anyhow!("No profiles.toml file found. Use built-in profiles or create a profiles.toml file."))?;
@@ -568,8 +571,10 @@ fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
     let profiles_content = std::fs::read_to_string(&profiles_path)
         .with_context(|| format!("Failed to read profiles file: {}", profiles_path.display()))?;
 
-    let profiles_config: std::collections::HashMap<String, std::collections::HashMap<String, ProfileConfig>> = 
-        toml::from_str(&profiles_content)
+    let profiles_config: std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, ProfileConfig>,
+    > = toml::from_str(&profiles_content)
         .with_context(|| format!("Failed to parse profiles file: {}", profiles_path.display()))?;
 
     let profile = profiles_config
@@ -606,7 +611,11 @@ fn load_profile(args: &mut Args, profile_name: &str) -> Result<()> {
         }
     }
 
-    info!("Loaded profile '{}' from: {}", profile_name, profiles_path.display());
+    info!(
+        "Loaded profile '{}' from: {}",
+        profile_name,
+        profiles_path.display()
+    );
     if let Some(description) = &profile.description {
         info!("Profile description: {}", description);
     }
@@ -621,7 +630,7 @@ fn init_logging(args: &Args) -> Result<()> {
     } else {
         "info"
     };
-    
+
     std::env::set_var("RUST_LOG", level);
     env_logger::init();
     Ok(())
@@ -631,15 +640,15 @@ fn validate_args(args: &Args) -> Result<()> {
     if !args.input.exists() {
         anyhow::bail!("Input directory does not exist: {}", args.input.display());
     }
-    
+
     if !args.input.is_dir() {
         anyhow::bail!("Input path is not a directory: {}", args.input.display());
     }
-    
+
     if args.quality > 100 {
         anyhow::bail!("Quality must be between 0-100");
     }
-    
+
     if let Some(threads) = args.threads {
         if threads == 0 {
             anyhow::bail!("Thread count must be greater than 0");
@@ -662,13 +671,16 @@ fn setup_thread_pool(threads: Option<usize>) {
             std::cmp::min(io_threads, 32) // Cap at 32 to avoid thread overhead
         }
     };
-    
+
     rayon::ThreadPoolBuilder::new()
         .num_threads(optimal_threads)
         .build_global()
         .expect("Failed to setup thread pool");
-    
-    info!("Using {} threads for optimal I/O performance", optimal_threads);
+
+    info!(
+        "Using {} threads for optimal I/O performance",
+        optimal_threads
+    );
 }
 
 fn get_output_dir(args: &Args) -> Result<PathBuf> {
@@ -686,35 +698,33 @@ fn get_output_dir(args: &Args) -> Result<PathBuf> {
 }
 
 async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
-    let supported_extensions: Vec<String> = args.formats
-        .iter()
-        .map(|f| f.to_lowercase())
-        .collect();
-    
+    let supported_extensions: Vec<String> = args.formats.iter().map(|f| f.to_lowercase()).collect();
+
     let verbose = args.verbose; // Capture for use in closure
-    
+
     if !args.quiet {
         info!("Scanning directory: {}", args.input.display());
     }
-    
+
     let files: Vec<PathBuf> = WalkDir::new(&args.input)
         .into_iter()
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            
+
             if !path.is_file() {
                 return None;
             }
-            
-            let extension = path.extension()
+
+            let extension = path
+                .extension()
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext.to_lowercase())?;
-            
+
             if !supported_extensions.contains(&extension) {
                 return None;
             }
-            
+
             // Deep validation: check file headers for integrity
             if !is_valid_image_file(path) {
                 if verbose {
@@ -722,14 +732,14 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
                 }
                 return None;
             }
-            
+
             // Check file size
             if let Ok(metadata) = std::fs::metadata(path) {
                 let size_kb = metadata.len() / 1024;
                 if size_kb < args.min_size {
                     return None;
                 }
-                
+
                 if let Some(max_size) = args.max_size {
                     let size_mb = metadata.len() / 1024 / 1024;
                     if size_mb > max_size {
@@ -737,11 +747,11 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
                     }
                 }
             }
-            
+
             Some(path.to_path_buf())
         })
         .collect();
-    
+
     Ok(files)
 }
 
@@ -770,7 +780,7 @@ async fn convert_images(
     if !args.quiet && !args.dry_run {
         info!("Pre-creating output directories for optimal performance...");
     }
-    
+
     if !args.dry_run {
         pre_create_directories(files, output_dir, &args.input, args.preserve_structure)?;
     }
@@ -781,7 +791,7 @@ async fn convert_images(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {msg}")
             .unwrap()
-            .progress_chars("#>-")
+            .progress_chars("#>-"),
     );
     main_progress.enable_steady_tick(Duration::from_millis(100));
 
@@ -843,35 +853,59 @@ async fn convert_images(
                     match result {
                         Ok((original_size, compressed_size)) => {
                             stats_clone.record_success(original_size, compressed_size);
-                            // 新增：记录格式统计
+                            // 记录文件格式
                             if let Some(ext) = input_path.extension().and_then(|e| e.to_str()) {
                                 stats_clone.record_format(ext.to_lowercase());
                             }
+                            // 记录重试次数（如果有）
+                            if let Some(file_str) = input_path.to_str() {
+                                stats_clone.record_retry(file_str);
+                            }
                             // Best practice: handle input file replacement after successful conversion
                             match replace_mode {
-                                ReplaceInputMode::Off => {},
+                                ReplaceInputMode::Off => {}
                                 ReplaceInputMode::Recycle => {
                                     if let Err(e) = trash_delete(input_path) {
-                                        stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:recycle] {}", e));
+                                        stats_clone.record_error(
+                                            input_path.display().to_string(),
+                                            format!("[replace_input:recycle] {}", e),
+                                        );
                                         if verbose {
-                                            error!("Failed to move {} to recycle bin: {}", input_path.display(), e);
+                                            error!(
+                                                "Failed to move {} to recycle bin: {}",
+                                                input_path.display(),
+                                                e
+                                            );
                                         }
                                     }
-                                },
+                                }
                                 ReplaceInputMode::Delete => {
                                     if let Err(e) = std::fs::remove_file(input_path) {
-                                        stats_clone.record_error(input_path.display().to_string(), format!("[replace_input:delete] {}", e));
+                                        stats_clone.record_error(
+                                            input_path.display().to_string(),
+                                            format!("[replace_input:delete] {}", e),
+                                        );
                                         if verbose {
-                                            error!("Failed to delete {}: {}", input_path.display(), e);
+                                            error!(
+                                                "Failed to delete {}: {}",
+                                                input_path.display(),
+                                                e
+                                            );
                                         }
                                     }
-                                },
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
-                            stats_clone.record_error(input_path.display().to_string(), e.to_string());
+                            let error_msg = e.to_string();
+                            stats_clone
+                                .record_error(input_path.display().to_string(), error_msg.clone());
                             if verbose {
-                                error!("Failed to process {}: {}", input_path.display(), e);
+                                error!("Failed to process {}: {}", input_path.display(), error_msg);
+                            }
+                            // 记录跳过文件（如果是特定错误）
+                            if error_msg.contains("File exists") {
+                                stats_clone.record_skip();
                             }
                         }
                     }
@@ -897,10 +931,15 @@ async fn convert_images(
             let total_files_progress = main_progress.length().unwrap_or(0);
             let percentage = if total_files_progress > 0 {
                 (current_pos as f64 / total_files_progress as f64 * 100.0) as u32
-            } else { 0 };
+            } else {
+                0
+            };
             // 每次都刷新 set_message，提升流畅度
-            main_progress.set_message(format!("{}/{} ({}%) ETA: {}",
-                current_pos, total_files_progress, percentage,
+            main_progress.set_message(format!(
+                "{}/{} ({}%) ETA: {}",
+                current_pos,
+                total_files_progress,
+                percentage,
                 if let Some(eta) = stats_clone.estimate_eta(total_files) {
                     format_duration(eta)
                 } else {
@@ -931,7 +970,8 @@ fn pre_create_directories(
             output_path.set_extension("webp");
             output_path
         } else {
-            let filename = input_path.file_stem()
+            let filename = input_path
+                .file_stem()
                 .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
             output_dir.join(format!("{}.webp", filename.to_string_lossy()))
         };
@@ -958,36 +998,40 @@ fn process_single_image(
 ) -> Result<(u64, u64)> {
     let input_metadata = std::fs::metadata(input_path)?;
     let original_size = input_metadata.len();
-    
+
     let output_path = if preserve_structure {
         let relative_path = input_path.strip_prefix(input_root)?;
         let mut output_path = output_dir.join(relative_path);
         output_path.set_extension("webp");
         output_path
     } else {
-        let filename = input_path.file_stem()
+        let filename = input_path
+            .file_stem()
             .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
         output_dir.join(format!("{}.webp", filename.to_string_lossy()))
     };
-    
+
     if !dry_run && output_path.exists() && !overwrite {
-        return Err(anyhow::anyhow!("File exists and overwrite mode is disabled"));
+        return Err(anyhow::anyhow!(
+            "File exists and overwrite mode is disabled"
+        ));
     }
-    
+
     converter.convert_to_webp(input_path, &output_path)?;
-    
+
     let compressed_size = if dry_run {
         // Estimate compressed size for dry run (assume 60% compression ratio)
         (original_size as f64 * 0.6) as u64
     } else {
         std::fs::metadata(&output_path)?.len()
     };
-    
+
     Ok((original_size, compressed_size))
 }
 
 fn print_ascii_banner() {
-    println!(r#"
+    println!(
+        r#"
                     __                        ___             
                    /\ \                __   /'___\            
  __  __  __     __ \ \ \____   _____  /\_\ /\ \__/  __  __    
@@ -997,7 +1041,8 @@ fn print_ascii_banner() {
   \/__//__/   \/____/  \/___/   \ \ \/   \/_/ \/_/   `/___/> \
                                  \ \_\                  /\___/
                                   \/_/                  \/__/ 
-"#);
+"#
+    );
 }
 
 fn print_ascii_config(args: &Args, output_dir: &Path) {
@@ -1019,15 +1064,24 @@ fn print_results(stats: &ConversionStats, duration: Duration) {
     let errors = stats.error_count.load(Ordering::Relaxed);
     let original_size = stats.original_size.load(Ordering::Relaxed);
     let compressed_size = stats.compressed_size.load(Ordering::Relaxed);
-    
+
     println!("\n>> Conversion Results:");
     println!("   Processed:   {} files", processed);
     println!("   Failed:      {} files", errors);
     println!("   Original:    {}", format_size(original_size, DECIMAL));
     println!("   Compressed:  {}", format_size(compressed_size, DECIMAL));
-    println!("   Ratio:       {:.1}%", stats.get_compression_ratio() * 100.0);
-    println!("   Saved:       {}", format_size(original_size.saturating_sub(compressed_size), DECIMAL));
-    println!("   Speed:       {:.1} files/sec", processed as f64 / duration.as_secs_f64());
+    println!(
+        "   Ratio:       {:.1}%",
+        stats.get_compression_ratio() * 100.0
+    );
+    println!(
+        "   Saved:       {}",
+        format_size(original_size.saturating_sub(compressed_size), DECIMAL)
+    );
+    println!(
+        "   Speed:       {:.1} files/sec",
+        processed as f64 / duration.as_secs_f64()
+    );
     println!("   Duration:    {:.2?}", duration);
 }
 
@@ -1041,54 +1095,110 @@ fn generate_report(report: &ConversionReport, format: &ReportFormat) -> Result<(
             let json = serde_json::to_string_pretty(report)?;
             std::fs::write("conversion_report.json", json)?;
             info!("Generated JSON report: conversion_report.json");
-        },
+        }
         ReportFormat::Csv => {
             generate_csv_report(report)?;
             info!("Generated CSV report: conversion_report.csv");
-        },
+        }
         ReportFormat::Html => {
             generate_html_report(report)?;
             info!("Generated HTML report: conversion_report.html");
-        },
+        }
     }
     Ok(())
 }
 
 fn generate_csv_report(report: &ConversionReport) -> Result<()> {
     let mut wtr = csv::Writer::from_path("conversion_report.csv")?;
-    
+
     // Write header
-    wtr.write_record(&[
-        "Metric", "Value", "Unit"
-    ])?;
-    
+    wtr.write_record(&["Metric", "Value", "Unit"])?;
+
     // Write basic stats
-    wtr.write_record(&["Start Time", &report.start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string(), ""])?;
-    wtr.write_record(&["End Time", &report.end_time.format("%Y-%m-%d %H:%M:%S UTC").to_string(), ""])?;
-    wtr.write_record(&["Duration", &format!("{:.2}", report.duration.as_secs_f64()), "seconds"])?;
-    wtr.write_record(&["Input Directory", &report.input_dir.display().to_string(), ""])?;
-    wtr.write_record(&["Output Directory", &report.output_dir.display().to_string(), ""])?;
+    wtr.write_record(&[
+        "Start Time",
+        &report
+            .start_time
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "End Time",
+        &report.end_time.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Duration",
+        &format!("{:.2}", report.duration.as_secs_f64()),
+        "seconds",
+    ])?;
+    wtr.write_record(&[
+        "Input Directory",
+        &report.input_dir.display().to_string(),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Output Directory",
+        &report.output_dir.display().to_string(),
+        "",
+    ])?;
     wtr.write_record(&["Total Files", &report.total_files.to_string(), "files"])?;
-    wtr.write_record(&["Processed Files", &report.processed_files.to_string(), "files"])?;
+    wtr.write_record(&[
+        "Processed Files",
+        &report.processed_files.to_string(),
+        "files",
+    ])?;
     wtr.write_record(&["Failed Files", &report.failed_files.to_string(), "files"])?;
     wtr.write_record(&["Skipped Files", &report.skipped_files.to_string(), "files"])?;
-    wtr.write_record(&["Original Size", &format_size(report.original_size, DECIMAL), ""])?;
-    wtr.write_record(&["Compressed Size", &format_size(report.compressed_size, DECIMAL), ""])?;
-    wtr.write_record(&["Space Saved", &format_size(report.original_size.saturating_sub(report.compressed_size), DECIMAL), ""])?;
-    wtr.write_record(&["Compression Ratio", &format!("{:.1}%", report.compression_ratio), ""])?;
-    wtr.write_record(&["Processing Speed", &format!("{:.1}", report.files_per_second), "files/sec"])?;
-    wtr.write_record(&["Throughput", &format_size(report.bytes_per_second, DECIMAL), "bytes/sec"])?;
+    wtr.write_record(&[
+        "Original Size",
+        &format_size(report.original_size, DECIMAL),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Compressed Size",
+        &format_size(report.compressed_size, DECIMAL),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Space Saved",
+        &format_size(
+            report.original_size.saturating_sub(report.compressed_size),
+            DECIMAL,
+        ),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Compression Ratio",
+        &format!("{:.1}%", report.compression_ratio),
+        "",
+    ])?;
+    wtr.write_record(&[
+        "Processing Speed",
+        &format!("{:.1}", report.files_per_second),
+        "files/sec",
+    ])?;
+    wtr.write_record(&[
+        "Throughput",
+        &format_size(report.bytes_per_second, DECIMAL),
+        "bytes/sec",
+    ])?;
     wtr.write_record(&["Thread Count", &report.thread_count.to_string(), "threads"])?;
     wtr.write_record(&["Quality Setting", &report.quality.to_string(), ""])?;
     wtr.write_record(&["Mode", &report.mode, ""])?;
-    
+
     // Write format statistics
     wtr.write_record(&["", "", ""])?; // Empty row
     wtr.write_record(&["Format Statistics", "", ""])?;
     for (format, count) in &report.format_stats {
-        wtr.write_record(&[&format!("{} Files", format.to_uppercase()), &count.to_string(), "files"])?;
+        wtr.write_record(&[
+            &format!("{} Files", format.to_uppercase()),
+            &count.to_string(),
+            "files",
+        ])?;
     }
-    
+
     // Write errors if any
     if !report.errors.is_empty() {
         wtr.write_record(&["", "", ""])?; // Empty row
@@ -1097,7 +1207,7 @@ fn generate_csv_report(report: &ConversionReport) -> Result<()> {
             wtr.write_record(&[&format!("Error {}", i + 1), error, ""])?;
         }
     }
-    
+
     wtr.flush()?;
     Ok(())
 }
@@ -1106,7 +1216,8 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
     // 修正 compression_ratio 显示为百分比
     let compression_percentage = (report.compression_ratio).clamp(0.0, 1.0) * 100.0;
     let compression_ratio_percent = report.compression_ratio * 100.0;
-    let html_content = format!(r#"
+    let html_content = format!(
+        r#"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1328,7 +1439,10 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
         compression_percentage = compression_percentage,
         compression_ratio_percent = compression_ratio_percent,
         processed_files = report.processed_files,
-        space_saved = format_size(report.original_size.saturating_sub(report.compressed_size), DECIMAL),
+        space_saved = format_size(
+            report.original_size.saturating_sub(report.compressed_size),
+            DECIMAL
+        ),
         files_per_second = report.files_per_second,
         start_time = report.start_time.format("%Y-%m-%d %H:%M:%S UTC"),
         end_time = report.end_time.format("%Y-%m-%d %H:%M:%S UTC"),
@@ -1348,17 +1462,27 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
         error_section = if report.errors.is_empty() {
             String::new()
         } else {
-            format!(r#"
+            format!(
+                r#"
             <div class="section">
                 <h2>⚠️ Errors</h2>
                 <div class="error-list">
                     {}
                 </div>
             </div>
-            "#, report.errors.iter().enumerate()
-                .map(|(i, error)| format!("<div class=\"error-item\"><strong>Error {}:</strong> {}</div>", i + 1, error))
-                .collect::<Vec<_>>()
-                .join(""))
+            "#,
+                report
+                    .errors
+                    .iter()
+                    .enumerate()
+                    .map(|(i, error)| format!(
+                        "<div class=\"error-item\"><strong>Error {}:</strong> {}</div>",
+                        i + 1,
+                        error
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("")
+            )
         }
     );
     std::fs::write("conversion_report.html", html_content)?;

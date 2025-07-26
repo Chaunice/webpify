@@ -9,7 +9,7 @@ pub fn generate_temp_filename(base_name: &str, extension: &str) -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    
+
     format!("{}_{}.{}", base_name, timestamp, extension)
 }
 
@@ -41,15 +41,15 @@ pub fn get_relative_path(full_path: &Path, base_path: &Path) -> Result<PathBuf> 
 pub fn format_file_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     const THRESHOLD: f64 = 1024.0;
-    
+
     if bytes == 0 {
         return "0 B".to_string();
     }
-    
+
     let bytes_f = bytes as f64;
     let unit_index = (bytes_f.log(THRESHOLD).floor() as usize).min(UNITS.len() - 1);
     let size = bytes_f / THRESHOLD.powi(unit_index as i32);
-    
+
     if unit_index == 0 {
         format!("{} {}", bytes, UNITS[unit_index])
     } else {
@@ -61,7 +61,7 @@ pub fn format_file_size(bytes: u64) -> String {
 pub fn is_valid_image_file(path: &Path) -> bool {
     // First check extension
     let valid_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"];
-    
+
     let extension = if let Some(ext) = get_file_extension(path) {
         if !valid_extensions.contains(&ext.as_str()) {
             return false;
@@ -70,7 +70,7 @@ pub fn is_valid_image_file(path: &Path) -> bool {
     } else {
         return false;
     };
-    
+
     // Deep validation: check file headers (magic numbers)
     validate_image_header(path, &extension)
 }
@@ -79,43 +79,43 @@ pub fn is_valid_image_file(path: &Path) -> bool {
 fn validate_image_header(path: &Path, extension: &str) -> bool {
     use std::fs::File;
     use std::io::Read;
-    
+
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return false,
     };
-    
+
     let mut header = [0u8; 16]; // Read first 16 bytes
     if file.read(&mut header).unwrap_or(0) < 4 {
         return false; // File too small to be a valid image
     }
-    
+
     match extension {
         "jpg" | "jpeg" => {
             // JPEG files start with FF D8 and end with FF D9
             header[0] == 0xFF && header[1] == 0xD8
-        },
+        }
         "png" => {
             // PNG signature: 89 50 4E 47 0D 0A 1A 0A
             header[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        },
+        }
         "gif" => {
             // GIF signature: "GIF87a" or "GIF89a"
             &header[0..6] == b"GIF87a" || &header[0..6] == b"GIF89a"
-        },
+        }
         "bmp" => {
             // BMP signature: "BM"
             &header[0..2] == b"BM"
-        },
+        }
         "tiff" => {
             // TIFF signatures: "II*\0" (little-endian) or "MM\0*" (big-endian)
-            (&header[0..4] == [0x49, 0x49, 0x2A, 0x00]) || 
-            (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A])
-        },
+            (&header[0..4] == [0x49, 0x49, 0x2A, 0x00])
+                || (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A])
+        }
         "webp" => {
             // WebP signature: "RIFF" at start and "WEBP" at offset 8
             &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP"
-        },
+        }
         _ => true, // For unknown extensions, assume valid
     }
 }
@@ -126,7 +126,7 @@ pub fn calculate_compression_ratio(original_size: u64, compressed_size: u64) -> 
     if original_size == 0 {
         return 0.0;
     }
-    
+
     compressed_size as f64 / original_size as f64
 }
 
@@ -134,7 +134,7 @@ pub fn calculate_compression_ratio(original_size: u64, compressed_size: u64) -> 
 #[allow(dead_code)]
 pub fn get_optimal_thread_count() -> usize {
     let cpu_count = num_cpus::get();
-    
+
     // For I/O intensive tasks, we can use more threads than CPU cores
     // But also consider memory usage
     (cpu_count * 2).min(16) // Max 16 threads
@@ -145,14 +145,14 @@ pub fn get_optimal_thread_count() -> usize {
 pub fn check_disk_space(path: &Path, required_space: u64) -> Result<bool> {
     // Cross-platform disk space checking
     use std::fs;
-    
+
     if let Ok(metadata) = fs::metadata(path) {
         if metadata.is_dir() {
             // For directories, check the parent filesystem
             return check_filesystem_space(path, required_space);
         }
     }
-    
+
     // For files, check the parent directory
     if let Some(parent) = path.parent() {
         check_filesystem_space(parent, required_space)
@@ -167,15 +167,15 @@ fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
-    
+
     let path_wide: Vec<u16> = OsStr::new(path)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    
+
     let mut free_bytes = 0u64;
     let mut total_bytes = 0u64;
-    
+
     unsafe {
         let result = windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
             path_wide.as_ptr(),
@@ -183,7 +183,7 @@ fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
             &mut total_bytes,
             ptr::null_mut(),
         );
-        
+
         if result != 0 {
             Ok(free_bytes >= required_space)
         } else {
@@ -197,13 +197,13 @@ fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
 fn check_filesystem_space(path: &Path, required_space: u64) -> Result<bool> {
     use std::ffi::CString;
     use std::mem;
-    
+
     let path_cstr = CString::new(path.to_string_lossy().as_bytes())?;
-    
+
     unsafe {
         let mut statvfs: libc::statvfs = mem::zeroed();
         let result = libc::statvfs(path_cstr.as_ptr(), &mut statvfs);
-        
+
         if result == 0 {
             let available_bytes = statvfs.f_bavail * statvfs.f_frsize;
             Ok(available_bytes >= required_space)
@@ -223,7 +223,7 @@ fn check_filesystem_space(_path: &Path, _required_space: u64) -> Result<bool> {
 /// Format duration for human-readable display
 pub fn format_duration(duration: std::time::Duration) -> String {
     let total_seconds = duration.as_secs();
-    
+
     if total_seconds < 60 {
         format!("{}s", total_seconds)
     } else if total_seconds < 3600 {
@@ -272,6 +272,9 @@ mod tests {
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("test.jpg"), "test.jpg");
         assert_eq!(sanitize_filename("../../../etc/passwd"), "etcpasswd");
-        assert_eq!(sanitize_filename("file with spaces.png"), "file with spaces.png");
+        assert_eq!(
+            sanitize_filename("file with spaces.png"),
+            "file with spaces.png"
+        );
     }
 }
