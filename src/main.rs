@@ -843,6 +843,10 @@ async fn convert_images(
                     match result {
                         Ok((original_size, compressed_size)) => {
                             stats_clone.record_success(original_size, compressed_size);
+                            // 新增：记录格式统计
+                            if let Some(ext) = input_path.extension().and_then(|e| e.to_str()) {
+                                stats_clone.record_format(ext.to_lowercase());
+                            }
                             // Best practice: handle input file replacement after successful conversion
                             match replace_mode {
                                 ReplaceInputMode::Off => {},
@@ -1099,6 +1103,9 @@ fn generate_csv_report(report: &ConversionReport) -> Result<()> {
 }
 
 fn generate_html_report(report: &ConversionReport) -> Result<()> {
+    // 修正 compression_ratio 显示为百分比
+    let compression_percentage = (report.compression_ratio).clamp(0.0, 1.0) * 100.0;
+    let compression_ratio_percent = report.compression_ratio * 100.0;
     let html_content = format!(r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -1234,7 +1241,6 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
         .compression-fill {{
             height: 100%;
             background: linear-gradient(90deg, #48bb78, #38a169);
-            width: {compression_percentage:.1}%;
             transition: width 1s ease-in-out;
         }}
     </style>
@@ -1253,7 +1259,7 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
                     <div class="stat-label">Files Processed</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">{compression_ratio:.1}%</div>
+                    <div class="stat-value">{compression_ratio_percent:.1}%</div>
                     <div class="stat-label">Compression Ratio</div>
                 </div>
                 <div class="stat-card">
@@ -1268,10 +1274,10 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
             
             <div class="section">
                 <h2>📊 Conversion Overview</h2>
-                <div class="compression-bar">
-                    <div class="compression-fill"></div>
+                <div class="compression-bar" aria-label="Compression Efficiency">
+                    <div class="compression-fill" style="width: {compression_percentage:.1}%"></div>
                 </div>
-                <p><strong>Compression Efficiency:</strong> {compression_ratio:.1}% space reduction achieved</p>
+                <p><strong>Compression Efficiency:</strong> {compression_ratio_percent:.1}% space reduction achieved</p>
                 
                 <table class="format-table">
                     <tr>
@@ -1319,9 +1325,9 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
 </body>
 </html>
 "#,
-        compression_percentage = report.compression_ratio,
+        compression_percentage = compression_percentage,
+        compression_ratio_percent = compression_ratio_percent,
         processed_files = report.processed_files,
-        compression_ratio = report.compression_ratio,
         space_saved = format_size(report.original_size.saturating_sub(report.compressed_size), DECIMAL),
         files_per_second = report.files_per_second,
         start_time = report.start_time.format("%Y-%m-%d %H:%M:%S UTC"),
@@ -1355,12 +1361,14 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
                 .join(""))
         }
     );
-    
     std::fs::write("conversion_report.html", html_content)?;
     Ok(())
 }
 
 fn generate_format_rows(format_stats: &HashMap<String, u64>, total_processed: u64) -> String {
+    if format_stats.is_empty() {
+        return "<tr><td colspan=\"3\" style=\"text-align:center;color:#999;\">无格式统计数据</td></tr>".to_string();
+    }
     let mut rows = Vec::new();
     for (format, count) in format_stats {
         let percentage = if total_processed > 0 {
