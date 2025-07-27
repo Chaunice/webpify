@@ -242,8 +242,7 @@ pub struct ConversionReport {
     pub errors: Vec<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     if std::env::args().len() == 1 {
         // print_ascii_banner();
         Args::command().print_help()?;
@@ -313,7 +312,7 @@ async fn main() -> Result<()> {
 
     // Scan input files
     let files = if args.prescan {
-        scan_input_files(&args).await?
+        scan_input_files(&args)?
     } else {
         scan_files_streaming(&args)?
     };
@@ -361,7 +360,7 @@ async fn main() -> Result<()> {
     }
 
     // Execute conversion
-    let stats = convert_images(&args, &files, &output_dir).await?;
+    let stats = convert_images(&args, &files, &output_dir)?;
 
     let duration = start_time.elapsed();
     let end_time_utc = Utc::now();
@@ -697,7 +696,7 @@ fn get_output_dir(args: &Args) -> Result<PathBuf> {
     }
 }
 
-async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
+fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
     let supported_extensions: Vec<String> = args.formats.iter().map(|f| f.to_lowercase()).collect();
 
     let verbose = args.verbose; // Capture for use in closure
@@ -758,11 +757,10 @@ async fn scan_input_files(args: &Args) -> Result<Vec<PathBuf>> {
 fn scan_files_streaming(args: &Args) -> Result<Vec<PathBuf>> {
     // Streaming scan implementation for very large directories
     // For this simplified version, we use the regular scan
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(scan_input_files(args))
+    scan_input_files(args)
 }
 
-async fn convert_images(
+fn convert_images(
     args: &Args,
     files: &[PathBuf],
     output_dir: &Path,
