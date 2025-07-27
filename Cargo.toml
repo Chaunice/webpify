@@ -15,7 +15,6 @@ path = "src/main.rs"
 # Image processing
 image = { version = "0.25.6", features = ["webp", "jpeg", "png", "gif", "bmp", "tiff"] }
 webp = "0.3.0"
-imageproc = "0.25.0"  # For advanced image analysis
 
 # CLI and argument parsing
 clap = { version = "4.5.41", features = ["derive", "color"] }
@@ -25,7 +24,6 @@ rayon = "1.7"
 
 # File system operations
 walkdir = "2.3"
-glob = "0.3"
 
 # Progress and logging
 indicatif = { version = "0.18.0", features = ["rayon"] }
@@ -44,10 +42,3 @@ num_cpus = "1.16"
 trash = "5.2.2"
 dirs = "6.0.0"
 crossbeam-channel = "0.5.15"
-
-# Platform-specific dependencies
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"

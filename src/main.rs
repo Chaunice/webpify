@@ -186,10 +186,6 @@ pub struct Args {
     /// Dry run mode - preview operations without making changes
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
-
-    /// Enable quality metrics calculation (SSIM/PSNR)
-    #[arg(long, default_value_t = false)]
-    pub quality_metrics: bool,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
