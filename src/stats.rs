@@ -101,45 +101,32 @@ impl ConversionStats {
         self.skipped_count.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_format(&self, format: String) {
-        if let Ok(mut stats) = self.format_stats.lock() {
-            *stats.entry(format).or_insert(0) += 1;
+    pub fn record_format(&self, format: &str) {
+        if let Ok(mut format_stats) = self.format_stats.lock() {
+            *format_stats.entry(format.to_string()).or_insert(0) += 1;
         }
     }
 
     pub fn get_compression_ratio(&self) -> f64 {
-        let original = self.original_size.load(Ordering::Relaxed) as f64;
-        let compressed = self.compressed_size.load(Ordering::Relaxed) as f64;
+        let original = self.original_size.load(Ordering::Relaxed);
+        let compressed = self.compressed_size.load(Ordering::Relaxed);
 
-        if original > 0.0 {
-            compressed / original
-        } else {
+        if original == 0 {
             0.0
+        } else {
+            1.0 - (compressed as f64 / original as f64)
         }
     }
 
-    pub fn get_format_stats(&self) -> HashMap<String, u64> {
-        self.format_stats
-            .lock()
-            .map(|stats| stats.clone())
-            .unwrap_or_default()
+    pub fn get_format_stats(&self) -> std::collections::HashMap<String, u64> {
+        self.format_stats.lock().map(|stats| stats.clone()).unwrap_or_else(|_| std::collections::HashMap::new())
     }
 
     pub fn get_errors(&self) -> Vec<String> {
-        self.errors
-            .lock()
-            .map(|errors| {
-                errors
-                    .iter()
-                    .map(|e| format!("{}: {}", e.file_path, e.error_message))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
-impl Default for ConversionStats {
-    fn default() -> Self {
-        Self::new()
+        if let Ok(errors) = self.errors.lock() {
+            errors.iter().map(|e| format!("{}: {}", e.file_path, e.error_message)).collect()
+        } else {
+            Vec::new()
+        }
     }
 }
