@@ -60,28 +60,28 @@ fn validate_image_header(path: &Path, extension: &str) -> bool {
     match extension {
         "jpg" | "jpeg" => {
             // JPEG files start with FF D8
-            header[0] == 0xFF && header[1] == 0xD8
+            header.len() >= 2 && header[0] == 0xFF && header[1] == 0xD8
         }
         "png" => {
             // PNG signature: 89 50 4E 47 0D 0A 1A 0A
-            header[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+            header.len() >= 8 && header[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         }
         "gif" => {
             // GIF signature: "GIF87a" or "GIF89a"
-            &header[0..6] == b"GIF87a" || &header[0..6] == b"GIF89a"
+            header.len() >= 6 && (&header[0..6] == b"GIF87a" || &header[0..6] == b"GIF89a")
         }
         "bmp" => {
             // BMP signature: "BM"
-            &header[0..2] == b"BM"
+            header.len() >= 2 && &header[0..2] == b"BM"
         }
         "tiff" => {
             // TIFF signatures: "II*\0" (little-endian) or "MM\0*" (big-endian)
-            (&header[0..4] == [0x49, 0x49, 0x2A, 0x00])
-                || (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A])
+            header.len() >= 4 && ((&header[0..4] == [0x49, 0x49, 0x2A, 0x00])
+                || (&header[0..4] == [0x4D, 0x4D, 0x00, 0x2A]))
         }
         "webp" => {
             // WebP signature: "RIFF" at start and "WEBP" at offset 8
-            &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP"
+            header.len() >= 12 && &header[0..4] == b"RIFF" && &header[8..12] == b"WEBP"
         }
         _ => true, // For unknown extensions, assume valid
     }
