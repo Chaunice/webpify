@@ -187,7 +187,6 @@ impl From<ReplaceInputModeArg> for ReplaceInputMode {
 
 fn main() -> Result<()> {
     if std::env::args().len() == 1 {
-        print_ascii_banner();
         Args::command().print_help()?;
         println!();
         std::process::exit(0);
