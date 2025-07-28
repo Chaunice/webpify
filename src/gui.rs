@@ -1883,14 +1883,14 @@ fn setup_custom_fonts(ctx: &egui::Context) {
         if let Ok(font_data) = std::fs::read("C:/Windows/Fonts/msyh.ttc") {
             fonts.font_data.insert(
                 "microsoft_yahei".to_owned(),
-                egui::FontData::from_owned(font_data),
+                egui::FontData::from_owned(font_data).into(),
             );
             fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
                 .insert(1, "microsoft_yahei".to_owned()); // Insert after default font
         } else if let Ok(font_data) = std::fs::read("C:/Windows/Fonts/simsun.ttc") {
             fonts.font_data.insert(
                 "simsun".to_owned(),
-                egui::FontData::from_owned(font_data),
+                egui::FontData::from_owned(font_data).into(),
             );
             fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
                 .insert(1, "simsun".to_owned());
@@ -1900,7 +1900,7 @@ fn setup_custom_fonts(ctx: &egui::Context) {
         if let Ok(font_data) = std::fs::read("C:/Windows/Fonts/seguiemj.ttf") {
             fonts.font_data.insert(
                 "segoe_ui_emoji".to_owned(),
-                egui::FontData::from_owned(font_data),
+                egui::FontData::from_owned(font_data).into(),
             );
             fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
                 .push("segoe_ui_emoji".to_owned());
