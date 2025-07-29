@@ -36,6 +36,12 @@ pub struct ConsoleProgressReporter {
 }
 
 #[cfg(feature = "cli")]
+impl Default for ConsoleProgressReporter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConsoleProgressReporter {
     pub fn new() -> Self {
         let multi_progress = indicatif::MultiProgress::new();
@@ -78,7 +84,7 @@ impl ProgressReporter for ConsoleProgressReporter {
     }
 
     fn report_error(&self, file_path: &str, error: &str) {
-        self.progress_bar.println(format!("❌ Error processing {}: {}", file_path, error));
+        self.progress_bar.println(format!("❌ Error processing {file_path}: {error}"));
     }
 
     fn report_success(&self, file_path: &str, original_size: u64, compressed_size: u64) {

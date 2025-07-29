@@ -95,7 +95,7 @@ fn generate_json_report(report: &ConversionReport) -> Result<()> {
     let json = serde_json::to_string_pretty(report)?;
     let report_path = "webpify_report.json";
     std::fs::write(report_path, json)?;
-    println!("Report saved to: {}", report_path);
+    println!("Report saved to: {report_path}");
     Ok(())
 }
 
@@ -125,7 +125,7 @@ fn generate_csv_report(report: &ConversionReport) -> Result<()> {
     writeln!(file, "quality,{}", report.quality)?;
     writeln!(file, "mode,{}", report.mode)?;
     
-    println!("Report saved to: {}", report_path);
+    println!("Report saved to: {report_path}");
     Ok(())
 }
 
@@ -170,6 +170,6 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
     
     let report_path = "webpify_report.html";
     std::fs::write(report_path, html)?;
-    println!("Report saved to: {}", report_path);
+    println!("Report saved to: {report_path}");
     Ok(())
 }

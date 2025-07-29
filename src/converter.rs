@@ -141,7 +141,7 @@ impl ImageConverter {
 
         // Quick decision based on file extension
         match extension.as_str() {
-            "png" | "gif" => return true, // Likely have transparency or few colors
+            "png" | "gif" => true, // Likely have transparency or few colors
             "jpg" | "jpeg" => {
                 // For JPEG, analyze image characteristics
                 let (width, height) = img.dimensions();
@@ -241,11 +241,7 @@ impl ImageConverter {
         let new_height = (height as f64 * scale_factor) as u32;
 
         log::warn!(
-            "Resizing image from {}x{} to {}x{} to fit WebP limits",
-            width,
-            height,
-            new_width,
-            new_height
+            "Resizing image from {width}x{height} to {new_width}x{new_height} to fit WebP limits"
         );
 
         Ok(Some(img.resize(

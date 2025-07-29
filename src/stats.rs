@@ -24,6 +24,12 @@ pub struct ErrorRecord {
     pub retry_count: u32,
 }
 
+impl Default for ConversionStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConversionStats {
     pub fn new() -> Self {
         Self {

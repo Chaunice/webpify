@@ -199,7 +199,7 @@ impl WebpifyCore {
                 Err(e) => {
                     self.stats.record_error(
                         input_path.display().to_string(),
-                        format!("{:#}", e),
+                        format!("{e:#}"),
                     );
                     log::error!("Failed to convert {}: {:#}", input_path.display(), e);
                 }

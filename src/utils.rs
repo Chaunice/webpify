@@ -4,7 +4,7 @@ impl fmt::Display for ImageValidationError {
         match self {
             ImageValidationError::InvalidExtension => write!(f, "Invalid file extension"),
             ImageValidationError::FileNotFound => write!(f, "File not found"),
-            ImageValidationError::IoError(e) => write!(f, "IO error: {}", e),
+            ImageValidationError::IoError(e) => write!(f, "IO error: {e}"),
             ImageValidationError::InvalidHeader => write!(f, "Invalid image header"),
             ImageValidationError::FileTooSmall => write!(f, "File too small to be a valid image"),
         }
@@ -23,11 +23,11 @@ pub fn format_duration(duration: Duration) -> String {
     let seconds = total_seconds % 60;
 
     if hours > 0 {
-        format!("{}h {}m {}s", hours, minutes, seconds)
+        format!("{hours}h {minutes}m {seconds}s")
     } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
+        format!("{minutes}m {seconds}s")
     } else {
-        format!("{}s", seconds)
+        format!("{seconds}s")
     }
 }
 

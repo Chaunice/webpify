@@ -297,7 +297,7 @@ fn print_results_summary(report: &ConversionReport) {
     if !report.errors.is_empty() && report.errors.len() <= 5 {
         println!("\n❌ Errors:");
         for error in &report.errors {
-            println!("  • {}", error);
+            println!("  • {error}");
         }
     } else if report.errors.len() > 5 {
         println!("\n❌ {} errors occurred (use --report for full details)", report.errors.len());
