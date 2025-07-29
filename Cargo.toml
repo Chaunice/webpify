@@ -57,3 +57,7 @@ gui = ["egui", "eframe", "rfd"]
 name = "webpify-gui"
 path = "src/gui.rs"
 required-features = ["gui"]
+
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
+lto = true
