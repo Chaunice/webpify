@@ -1563,9 +1563,9 @@ impl WebpifyGuiApp {
                         }
                     });
                 });
-                
+
                 ui.separator();
-                
+
                 // Show error if any occurred during scanning
                 if let Some(error) = &self.error_message {
                     ui.group(|ui| {
@@ -1575,7 +1575,7 @@ impl WebpifyGuiApp {
                     });
                     ui.add_space(15.0);
                 }
-                
+
                 if self.preview_files.is_empty() {
                     ui.centered_and_justified(|ui| {
                         if self.error_message.is_some() {
@@ -1586,12 +1586,12 @@ impl WebpifyGuiApp {
                     });
                     return;
                 }
-                
+
                 // Summary statistics
                 ui.group(|ui| {
                     ui.label("📈 Summary");
                     ui.add_space(5.0);
-                    
+
                     let total_size: u64 = self.preview_files.iter().map(|f| f.size).sum();
                     let estimated_output: u64 = self.preview_files.iter()
                         .filter_map(|f| f.estimated_output_size)
@@ -1602,7 +1602,7 @@ impl WebpifyGuiApp {
                     } else {
                         0.0
                     };
-                    
+
                     egui::Grid::new("preview_summary")
                         .num_columns(2)
                         .spacing([20.0, 5.0])
@@ -1610,19 +1610,19 @@ impl WebpifyGuiApp {
                             ui.label("🗂️ Total files:");
                             ui.label(format!("{}", self.preview_files.len()));
                             ui.end_row();
-                            
+
                             ui.label("📦 Total size:");
                             ui.label(humansize::format_size(total_size, humansize::DECIMAL));
                             ui.end_row();
-                            
+
                             ui.label("🗜️ Estimated output:");
                             ui.label(humansize::format_size(estimated_output, humansize::DECIMAL));
                             ui.end_row();
-                            
+
                             ui.label("💾 Estimated savings:");
                             ui.colored_label(
                                 egui::Color32::GREEN,
-                                format!("{} ({:.1}%)", 
+                                format!("{} ({:.1}%)",
                                     humansize::format_size(estimated_savings, humansize::DECIMAL),
                                     savings_percent
                                 )
@@ -1630,14 +1630,14 @@ impl WebpifyGuiApp {
                             ui.end_row();
                         });
                 });
-                
+
                 ui.add_space(10.0);
-                
+
                 // File list with details
                 ui.group(|ui| {
                     ui.label("📋 File Details");
                     ui.add_space(5.0);
-                    
+
                     egui::ScrollArea::vertical()
                         .max_height(300.0)
                         .show(ui, |ui| {
@@ -1652,24 +1652,24 @@ impl WebpifyGuiApp {
                                     ui.strong("Size");
                                     ui.strong("Est. Output");
                                     ui.end_row();
-                                    
+
                                     for file in &self.preview_files {
                                         // File name (truncated if too long)
                                         let file_name = file.path.file_name()
                                             .map(|n| n.to_string_lossy())
                                             .unwrap_or_else(|| "Unknown".into());
-                                        
+
                                         let display_name = if file_name.chars().count() > 30 {
                                             let truncated: String = file_name.chars().take(27).collect();
                                             format!("{}...", truncated)
                                         } else {
                                             file_name.to_string()
                                         };
-                                        
+
                                         ui.label(display_name);
                                         ui.label(file.format.to_uppercase());
                                         ui.label(humansize::format_size(file.size, humansize::DECIMAL));
-                                        
+
                                         if let Some(output_size) = file.estimated_output_size {
                                             let savings = file.size.saturating_sub(output_size);
                                             let savings_percent = if file.size > 0 {
@@ -1679,7 +1679,7 @@ impl WebpifyGuiApp {
                                             };
                                             ui.colored_label(
                                                 egui::Color32::DARK_GREEN,
-                                                format!("{} (-{:.0}%)", 
+                                                format!("{} (-{:.0}%)",
                                                     humansize::format_size(output_size, humansize::DECIMAL),
                                                     savings_percent
                                                 )
@@ -1692,10 +1692,10 @@ impl WebpifyGuiApp {
                                 });
                         });
                 });
-                
+
                 if self.preview_files.len() >= 100 {
                     ui.add_space(5.0);
-                    ui.colored_label(egui::Color32::ORANGE, 
+                    ui.colored_label(egui::Color32::ORANGE,
                         "⚠️ Showing first 100 files only. Use filters to refine your selection.");
                 }
             });
@@ -1720,9 +1720,9 @@ impl WebpifyGuiApp {
                         }
                     });
                 });
-                
+
                 ui.separator();
-                
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // Context-sensitive help based on current tab
                     match self.current_tab {
@@ -1732,9 +1732,9 @@ impl WebpifyGuiApp {
                         Tab::Progress => self.show_progress_help(ui),
                         Tab::Results => self.show_results_help(ui),
                     }
-                    
+
                     ui.add_space(20.0);
-                    
+
                     // General help sections
                     ui.collapsing("🚀 Quick Start Guide", |ui| {
                         ui.label("1. 📁 Select an input directory containing your images");
@@ -1744,9 +1744,9 @@ impl WebpifyGuiApp {
                         ui.label("5. ▶️ Start the conversion process");
                         ui.label("6. 📊 Review results and generate reports");
                     });
-                    
+
                     ui.add_space(10.0);
-                    
+
                     ui.collapsing("🎯 Quality Settings Guide", |ui| {
                         ui.label("🏆 Best (95%): Perfect for archival, professional work");
                         ui.label("⚖️ Balanced (85%): Good compromise between quality and size");
@@ -1755,9 +1755,9 @@ impl WebpifyGuiApp {
                         ui.add_space(5.0);
                         ui.label(egui::RichText::new("💡 Tip: Use Preview to test different settings!").italics());
                     });
-                    
+
                     ui.add_space(10.0);
-                    
+
                     ui.collapsing("📁 Supported Formats", |ui| {
                         ui.label("✅ Input: JPEG, PNG, GIF, BMP, TIFF, WebP");
                         ui.label("✅ Output: WebP (modern, efficient format)");
@@ -1767,9 +1767,9 @@ impl WebpifyGuiApp {
                         ui.label("  • Supports transparency like PNG");
                         ui.label("  • Excellent browser support");
                     });
-                    
+
                     ui.add_space(10.0);
-                    
+
                     ui.collapsing("⚡ Performance Tips", |ui| {
                         ui.label("🧵 Use auto-thread detection for optimal performance");
                         ui.label("💾 SSD storage significantly improves conversion speed");
@@ -1777,9 +1777,9 @@ impl WebpifyGuiApp {
                         ui.label("📊 Use batch processing for large image collections");
                         ui.label("🗂️ Preserve directory structure for organized output");
                     });
-                    
+
                     ui.add_space(10.0);
-                    
+
                     ui.collapsing("🛡️ Safety Features", |ui| {
                         ui.label("🔍 Dry run mode: Preview changes without modifying files");
                         ui.label("🗑️ Recycle bin: Safely remove originals (can be restored)");
@@ -1787,9 +1787,8 @@ impl WebpifyGuiApp {
                         ui.label("✅ Validation: Automatic checks before conversion starts");
                         ui.label("💾 Backup recommendation: Always backup important files first");
                     });
-                    
+
                     ui.add_space(10.0);
-                    
                     ui.collapsing("❓ Troubleshooting", |ui| {
                         ui.label("🚫 \"No files found\": Check file formats and directory permissions");
                         ui.label("💥 \"Conversion failed\": Verify sufficient disk space and file access");
