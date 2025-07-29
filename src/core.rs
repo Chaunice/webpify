@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 use walkdir::WalkDir;
@@ -171,7 +171,7 @@ impl WebpifyCore {
     fn convert_images(
         &self,
         files: &[PathBuf],
-        output_dir: &PathBuf,
+        output_dir: &Path,
         progress_reporter: Option<Box<dyn ProgressReporter>>,
     ) -> Result<()> {
         let converter = ImageConverter::new_with_dry_run(
@@ -221,8 +221,8 @@ impl WebpifyCore {
     fn process_single_file(
         &self,
         converter: &ImageConverter,
-        input_path: &PathBuf,
-        output_dir: &PathBuf,
+        input_path: &Path,
+        output_dir: &Path,
     ) -> Result<(u64, u64)> {
         let output_path = self.calculate_output_path(input_path, output_dir)?;
 
@@ -250,8 +250,8 @@ impl WebpifyCore {
     /// Calculate the output path for a given input file
     fn calculate_output_path(
         &self,
-        input_path: &PathBuf,
-        output_dir: &PathBuf,
+        input_path: &Path,
+        output_dir: &Path,
     ) -> Result<PathBuf> {
         let relative_path = input_path
             .strip_prefix(&self.options.input_dir)
@@ -278,7 +278,7 @@ impl WebpifyCore {
     }
 
     /// Handle input file replacement after successful conversion
-    fn handle_input_replacement(&self, input_path: &PathBuf) -> Result<()> {
+    fn handle_input_replacement(&self, input_path: &Path) -> Result<()> {
         match self.options.replace_input {
             ReplaceInputMode::Off => Ok(()),
             ReplaceInputMode::Recycle => {
