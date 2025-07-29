@@ -1,7 +1,7 @@
 //! # Webpify Library
-//! 
+//!
 //! High-performance batch image to WebP converter core library.
-//! 
+//!
 //! This library provides the core functionality for converting images to WebP format,
 //! with support for parallel processing, different compression modes, and comprehensive
 //! progress tracking.
@@ -14,12 +14,12 @@ pub mod stats;
 pub mod utils;
 
 // Re-export commonly used types
-pub use config::{ConversionOptions, Config, ProfileConfig};
+pub use config::{Config, ConversionOptions, ProfileConfig};
 pub use converter::ImageConverter;
 pub use core::WebpifyCore;
 pub use progress::ProgressReporter;
 pub use stats::ConversionStats;
-pub use utils::{format_duration, is_valid_image_file, validate_image_file, ImageValidationError};
+pub use utils::{ImageValidationError, format_duration, is_valid_image_file, validate_image_file};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -101,14 +101,22 @@ fn generate_json_report(report: &ConversionReport) -> Result<()> {
 
 fn generate_csv_report(report: &ConversionReport) -> Result<()> {
     use std::io::Write;
-    
+
     let report_path = "webpify_report.csv";
     let mut file = std::fs::File::create(report_path)?;
-    
+
     // Write CSV header
     writeln!(file, "metric,value")?;
-    writeln!(file, "start_time,{}", report.start_time.format("%Y-%m-%d %H:%M:%S UTC"))?;
-    writeln!(file, "end_time,{}", report.end_time.format("%Y-%m-%d %H:%M:%S UTC"))?;
+    writeln!(
+        file,
+        "start_time,{}",
+        report.start_time.format("%Y-%m-%d %H:%M:%S UTC")
+    )?;
+    writeln!(
+        file,
+        "end_time,{}",
+        report.end_time.format("%Y-%m-%d %H:%M:%S UTC")
+    )?;
     writeln!(file, "duration_seconds,{}", report.duration.as_secs())?;
     writeln!(file, "input_dir,{}", report.input_dir.display())?;
     writeln!(file, "output_dir,{}", report.output_dir.display())?;
@@ -124,7 +132,7 @@ fn generate_csv_report(report: &ConversionReport) -> Result<()> {
     writeln!(file, "thread_count,{}", report.thread_count)?;
     writeln!(file, "quality,{}", report.quality)?;
     writeln!(file, "mode,{}", report.mode)?;
-    
+
     println!("Report saved to: {report_path}");
     Ok(())
 }
@@ -167,7 +175,7 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
         report.quality,
         report.mode
     );
-    
+
     let report_path = "webpify_report.html";
     std::fs::write(report_path, html)?;
     println!("Report saved to: {report_path}");

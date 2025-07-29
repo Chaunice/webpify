@@ -95,7 +95,7 @@ impl Default for ConversionOptions {
             threads: None,
             formats: vec![
                 "jpg".to_string(),
-                "jpeg".to_string(), 
+                "jpeg".to_string(),
                 "png".to_string(),
                 "gif".to_string(),
                 "bmp".to_string(),

@@ -7,8 +7,8 @@ use std::time::Instant;
 use walkdir::WalkDir;
 
 use crate::{
-    config::ConversionOptions, converter::ImageConverter, progress::ProgressReporter,
-    stats::ConversionStats, utils::is_valid_image_file, ConversionReport, ReplaceInputMode,
+    ConversionReport, ReplaceInputMode, config::ConversionOptions, converter::ImageConverter,
+    progress::ProgressReporter, stats::ConversionStats, utils::is_valid_image_file,
 };
 
 /// Core conversion engine that orchestrates the image conversion process
@@ -191,16 +191,17 @@ impl WebpifyCore {
                     // Handle input file replacement
                     if !self.options.dry_run {
                         if let Err(e) = self.handle_input_replacement(input_path) {
-                            log::warn!("Failed to handle input replacement for {}: {}", 
-                                     input_path.display(), e);
+                            log::warn!(
+                                "Failed to handle input replacement for {}: {}",
+                                input_path.display(),
+                                e
+                            );
                         }
                     }
                 }
                 Err(e) => {
-                    self.stats.record_error(
-                        input_path.display().to_string(),
-                        format!("{e:#}"),
-                    );
+                    self.stats
+                        .record_error(input_path.display().to_string(), format!("{e:#}"));
                     log::error!("Failed to convert {}: {:#}", input_path.display(), e);
                 }
             }
@@ -248,11 +249,7 @@ impl WebpifyCore {
     }
 
     /// Calculate the output path for a given input file
-    fn calculate_output_path(
-        &self,
-        input_path: &Path,
-        output_dir: &Path,
-    ) -> Result<PathBuf> {
+    fn calculate_output_path(&self, input_path: &Path, output_dir: &Path) -> Result<PathBuf> {
         let relative_path = input_path
             .strip_prefix(&self.options.input_dir)
             .with_context(|| {
@@ -266,11 +263,7 @@ impl WebpifyCore {
         let output_path = if self.options.preserve_structure {
             output_dir.join(relative_path)
         } else {
-            output_dir.join(
-                input_path
-                    .file_name()
-                    .context("Failed to get filename")?,
-            )
+            output_dir.join(input_path.file_name().context("Failed to get filename")?)
         };
 
         // Change extension to .webp
@@ -282,8 +275,9 @@ impl WebpifyCore {
         match self.options.replace_input {
             ReplaceInputMode::Off => Ok(()),
             ReplaceInputMode::Recycle => {
-                trash::delete(input_path)
-                    .with_context(|| format!("Failed to move to recycle bin: {}", input_path.display()))?;
+                trash::delete(input_path).with_context(|| {
+                    format!("Failed to move to recycle bin: {}", input_path.display())
+                })?;
                 Ok(())
             }
             ReplaceInputMode::Delete => {

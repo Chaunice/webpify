@@ -125,12 +125,18 @@ impl ConversionStats {
     }
 
     pub fn get_format_stats(&self) -> std::collections::HashMap<String, u64> {
-        self.format_stats.lock().map(|stats| stats.clone()).unwrap_or_else(|_| std::collections::HashMap::new())
+        self.format_stats
+            .lock()
+            .map(|stats| stats.clone())
+            .unwrap_or_else(|_| std::collections::HashMap::new())
     }
 
     pub fn get_errors(&self) -> Vec<String> {
         if let Ok(errors) = self.errors.lock() {
-            errors.iter().map(|e| format!("{}: {}", e.file_path, e.error_message)).collect()
+            errors
+                .iter()
+                .map(|e| format!("{}: {}", e.file_path, e.error_message))
+                .collect()
         } else {
             Vec::new()
         }

@@ -46,10 +46,12 @@ impl ConsoleProgressReporter {
     pub fn new() -> Self {
         let multi_progress = indicatif::MultiProgress::new();
         let progress_bar = multi_progress.add(indicatif::ProgressBar::new(0));
-        
+
         progress_bar.set_style(
             indicatif::ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                )
                 .unwrap()
                 .progress_chars("#>-"),
         );
@@ -80,11 +82,13 @@ impl ProgressReporter for ConsoleProgressReporter {
     }
 
     fn finish_conversion(&self) {
-        self.progress_bar.finish_with_message("Conversion completed!");
+        self.progress_bar
+            .finish_with_message("Conversion completed!");
     }
 
     fn report_error(&self, file_path: &str, error: &str) {
-        self.progress_bar.println(format!("❌ Error processing {file_path}: {error}"));
+        self.progress_bar
+            .println(format!("❌ Error processing {file_path}: {error}"));
     }
 
     fn report_success(&self, file_path: &str, original_size: u64, compressed_size: u64) {
@@ -93,7 +97,7 @@ impl ProgressReporter for ConsoleProgressReporter {
         } else {
             0.0
         };
-        
+
         self.progress_bar.println(format!(
             "✅ {} -> {} ({:.1}% reduction)",
             file_path,

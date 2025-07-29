@@ -4,13 +4,8 @@ use std::path::PathBuf;
 
 // Use the library
 use webpify::{
-    config::ConversionOptions, 
-    generate_report, 
-    CompressionMode, 
-    ConversionReport,
-    ReplaceInputMode, 
-    ReportFormat, 
-    WebpifyCore,
+    CompressionMode, ConversionReport, ReplaceInputMode, ReportFormat, WebpifyCore,
+    config::ConversionOptions, generate_report,
 };
 
 #[cfg(feature = "cli")]
@@ -254,7 +249,8 @@ fn main() -> Result<()> {
 }
 
 fn print_ascii_banner() {
-    println!(r#"
+    println!(
+        r#"
                     __                        ___             
                    /\ \                __   /'___\            
  __  __  __     __ \ \ \____   _____  /\_\ /\ \__/  __  __    
@@ -266,12 +262,14 @@ fn print_ascii_banner() {
                                   \/_/                  \/__/ 
 
         High-Performance Batch WebP Converter v{}
-    "#, env!("CARGO_PKG_VERSION"));
+    "#,
+        env!("CARGO_PKG_VERSION")
+    );
 }
 
 fn print_results_summary(report: &ConversionReport) {
-    use humansize::{format_size, DECIMAL};
-    
+    use humansize::{DECIMAL, format_size};
+
     println!("\n🎉 Conversion completed!");
     println!("📊 Results Summary:");
     println!("  ✅ Processed: {} files", report.processed_files);
@@ -281,25 +279,34 @@ fn print_results_summary(report: &ConversionReport) {
     if report.skipped_files > 0 {
         println!("  ⏭️ Skipped: {} files", report.skipped_files);
     }
-    
+
     if report.original_size > 0 {
         println!("\n💾 Space Analysis:");
-        println!("  📦 Original size: {}", format_size(report.original_size, DECIMAL));
-        println!("  🗜️ Compressed size: {}", format_size(report.compressed_size, DECIMAL));
+        println!(
+            "  📦 Original size: {}",
+            format_size(report.original_size, DECIMAL)
+        );
+        println!(
+            "  🗜️ Compressed size: {}",
+            format_size(report.compressed_size, DECIMAL)
+        );
         println!("  💾 Space saved: {:.1}%", report.compression_ratio * 100.0);
     }
-    
+
     println!("\n⏱️ Performance:");
     println!("  🕐 Duration: {:.1}s", report.duration.as_secs_f64());
     println!("  🚀 Speed: {:.1} files/sec", report.files_per_second);
     println!("  🧵 Threads used: {}", report.thread_count);
-    
+
     if !report.errors.is_empty() && report.errors.len() <= 5 {
         println!("\n❌ Errors:");
         for error in &report.errors {
             println!("  • {error}");
         }
     } else if report.errors.len() > 5 {
-        println!("\n❌ {} errors occurred (use --report for full details)", report.errors.len());
+        println!(
+            "\n❌ {} errors occurred (use --report for full details)",
+            report.errors.len()
+        );
     }
 }

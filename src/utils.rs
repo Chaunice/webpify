@@ -45,7 +45,10 @@ const IMAGE_SIGNATURES: &[(&str, &[&[u8]])] = &[
     ("png", &[&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]]),
     ("gif", &[b"GIF87a", b"GIF89a"]),
     ("bmp", &[b"BM"]),
-    ("tiff", &[&[0x49, 0x49, 0x2A, 0x00], &[0x4D, 0x4D, 0x00, 0x2A]]),
+    (
+        "tiff",
+        &[&[0x49, 0x49, 0x2A, 0x00], &[0x4D, 0x4D, 0x00, 0x2A]],
+    ),
     ("webp", &[]), // WebP needs special handling
 ];
 
@@ -78,9 +81,8 @@ pub fn validate_image_file(path: &Path) -> Result<(), ImageValidationError> {
     }
 
     // Check extension
-    let extension = get_file_extension(path)
-        .ok_or(ImageValidationError::InvalidExtension)?;
-    
+    let extension = get_file_extension(path).ok_or(ImageValidationError::InvalidExtension)?;
+
     if !is_supported_extension(&extension) {
         return Err(ImageValidationError::InvalidExtension);
     }
@@ -91,14 +93,13 @@ pub fn validate_image_file(path: &Path) -> Result<(), ImageValidationError> {
 
 /// Check if extension is supported
 fn is_supported_extension(extension: &str) -> bool {
-    IMAGE_SIGNATURES.iter()
-        .any(|(ext, _)| *ext == extension)
+    IMAGE_SIGNATURES.iter().any(|(ext, _)| *ext == extension)
 }
 
 /// Validate image file headers to prevent processing of corrupted or fake files
 fn validate_image_header(path: &Path, extension: &str) -> Result<(), ImageValidationError> {
     let mut file = File::open(path)?;
-    
+
     // Determine required header size
     let header_size = match extension {
         "webp" => 12,
@@ -107,10 +108,10 @@ fn validate_image_header(path: &Path, extension: &str) -> Result<(), ImageValida
         "tiff" => 4,
         _ => 2,
     };
-    
+
     let mut header = vec![0u8; header_size];
     let bytes_read = file.read(&mut header)?;
-    
+
     if bytes_read < header_size {
         return Err(ImageValidationError::FileTooSmall);
     }
@@ -122,11 +123,9 @@ fn validate_image_header(path: &Path, extension: &str) -> Result<(), ImageValida
         "bmp" => header[0..2] == *b"BM",
         "tiff" => {
             header[0..4] == [0x49, 0x49, 0x2A, 0x00] || // little-endian
-            header[0..4] == [0x4D, 0x4D, 0x00, 0x2A]    // big-endian
-        },
-        "webp" => {
-            header[0..4] == *b"RIFF" && header[8..12] == *b"WEBP"
-        },
+            header[0..4] == [0x4D, 0x4D, 0x00, 0x2A] // big-endian
+        }
+        "webp" => header[0..4] == *b"RIFF" && header[8..12] == *b"WEBP",
         _ => return Err(ImageValidationError::InvalidExtension),
     };
 
