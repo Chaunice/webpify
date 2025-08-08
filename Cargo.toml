@@ -61,3 +61,5 @@ required-features = ["gui"]
 [profile.release]
 strip = true  # Automatically strip symbols from the binary.
 lto = true
+opt-level = "z"
+codegen-units = 1  # Reduce codegen units for better optimization.
