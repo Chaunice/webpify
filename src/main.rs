@@ -83,10 +83,6 @@ pub struct Args {
     #[arg(long, value_name = "SIZE")]
     pub min_size: Option<u64>,
 
-    /// Enable pre-processing scan
-    #[arg(long, default_value = "true")]
-    pub prescan: bool,
-
     /// Verbose output mode
     #[arg(short, long)]
     pub verbose: bool,

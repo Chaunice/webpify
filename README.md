@@ -73,7 +73,6 @@ Options:
       --preserve-structure             Preserve original directory structure
       --max-size <SIZE>                Maximum file size limit (MB)
       --min-size <SIZE>                Minimum file size limit (KB) [default: 1]
-      --prescan                        Enable pre-processing scan
   -v, --verbose                        Verbose output mode
       --quiet                          Quiet mode (results only)
       --report                         Generate conversion report
@@ -93,12 +92,10 @@ Options:
 ### Performance Tuning
 
 ```bash
-# High concurrency (SSD or fast storage, accurate progress)
-# (Prescan is enabled by default and recommended for SSDs)
+# High concurrency (SSD or fast storage)
 webpify -i ./images -t 24
 
 # Low concurrency (HDD or slow storage, reduce random seeks)
-# (To disable prescan, set prescan = false in the config file)
 webpify -i ./images -t 4 --min-size 10
 
 # Memory-constrained environment
@@ -113,10 +110,6 @@ webpify -i ./images --profile print
 webpify -i ./images --profile archive
 ```
 
-> Note:
->
-> - The `--prescan` flag is a boolean switch (enable only). To disable prescan, set `prescan = false` in your config file.
-> - Prescan is enabled by default and is recommended for SSDs and most use cases. Disabling prescan may help reduce startup time and memory usage for very large datasets on slow HDDs, but progress reporting will be less accurate.
 
 ## 🛠 Example Configuration File
 
@@ -139,7 +132,6 @@ output_dir = "./webp_output"
 preserve_structure = true
 overwrite = false
 threads = 8
-prescan = true
 replace_input = "off" # off, recycle, delete
 reencode_webp = false
 dry_run = false # Enable preview mode

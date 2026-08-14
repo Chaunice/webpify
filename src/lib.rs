@@ -9,6 +9,7 @@
 pub mod config;
 pub mod converter;
 pub mod core;
+pub mod discovery;
 pub mod options;
 pub mod progress;
 pub mod stats;

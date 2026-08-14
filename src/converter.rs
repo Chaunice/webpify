@@ -5,6 +5,22 @@ use webp::{Encoder, WebPMemory};
 
 use crate::CompressionMode;
 
+/// Estimate the compressed size for a given original size, mode and quality.
+/// The single estimator shared by dry-run reporting and the GUI preview.
+pub fn estimate_output_size(original_size: u64, mode: &CompressionMode, quality: u8) -> u64 {
+    let factor = match mode {
+        CompressionMode::Lossless => 0.7, // Lossless typically saves 20-30%
+        CompressionMode::Lossy => match quality {
+            90..=100 => 0.6,
+            70..=89 => 0.4,
+            50..=69 => 0.3,
+            _ => 0.2,
+        },
+        CompressionMode::Auto => 0.5, // Conservative estimate for auto mode
+    };
+    (original_size as f64 * factor) as u64
+}
+
 pub struct ImageConverter {
     quality: f32,
     mode: CompressionMode,
@@ -30,7 +46,10 @@ impl ImageConverter {
         // Dry run mode: only analyze without converting
         if self.dry_run {
             self.analyze_conversion(input_path, output_path)?;
-            return Ok((original_size, (original_size as f64 * 0.6) as u64));
+            return Ok((
+                original_size,
+                estimate_output_size(original_size, &self.mode, self.quality as u8),
+            ));
         }
 
         // Performance: Read image with optimized buffer size
@@ -249,5 +268,24 @@ impl ImageConverter {
             new_height,
             image::imageops::FilterType::Lanczos3,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn estimate_never_exceeds_original() {
+        for mode in [
+            CompressionMode::Lossless,
+            CompressionMode::Lossy,
+            CompressionMode::Auto,
+        ] {
+            for quality in [0, 50, 80, 95] {
+                let estimate = estimate_output_size(1000, &mode, quality);
+                assert!(estimate <= 1000, "{mode:?} q{quality}: {estimate}");
+            }
+        }
     }
 }

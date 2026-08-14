@@ -101,7 +101,6 @@ pub struct WebpifyGuiApp {
     preserve_structure: bool,
     max_size: String,
     min_size: u64,
-    prescan: bool,
     reencode_webp: bool,
 
     // Advanced Settings
@@ -165,7 +164,6 @@ impl Default for WebpifyGuiApp {
             preserve_structure: true,
             max_size: String::new(),
             min_size: 1,
-            prescan: true,
             reencode_webp: false,
 
             // Advanced Settings
@@ -916,10 +914,6 @@ impl WebpifyGuiApp {
                         });
 
                         ui.add_space(10.0);
-                        ui.checkbox(
-                            &mut self.prescan,
-                            "🔍 Enable pre-processing scan (recommended)",
-                        );
 
                         // Performance tips with collapsible section
                         ui.add_space(10.0);
@@ -930,9 +924,11 @@ impl WebpifyGuiApp {
                                     .color(egui::Color32::GRAY),
                             );
                             ui.label(
-                                egui::RichText::new("• Pre-scan helps estimate time")
-                                    .size(11.0)
-                                    .color(egui::Color32::GRAY),
+                                egui::RichText::new(
+                                    "• Files are scanned once, then converted in parallel",
+                                )
+                                .size(11.0)
+                                .color(egui::Color32::GRAY),
                             );
                             ui.label(
                                 egui::RichText::new("• SSD storage improves speed")
@@ -1360,14 +1356,42 @@ impl WebpifyGuiApp {
             return;
         }
 
-        // Recursively scan directory for supported files with error handling
-        match self.scan_directory_safe(&input_path, &formats) {
-            Ok(_) => {
-                // Sort by file size (largest first) for better overview
-                self.preview_files.sort_by(|a, b| b.size.cmp(&a.size));
+        // Same filters as the real conversion run, plus presentation caps
+        let max_size_mb = match self.max_size.parse::<u64>() {
+            Ok(size) if size > 0 => Some(size),
+            Ok(_) => None,
+            Err(_) => {
+                self.error_message = Some("Invalid maximum file size".to_string());
+                return;
+            }
+        };
 
-                // Limit to first 100 files for performance
-                self.preview_files.truncate(100);
+        let discovery = webpify::discovery::DiscoveryOptions {
+            formats,
+            min_size_kb: self.min_size,
+            max_size_mb,
+            reencode_webp: self.reencode_webp,
+            max_files: Some(100),
+            max_depth: Some(5),
+        };
+
+        match webpify::discovery::discover_files(&input_path, &discovery) {
+            Ok(files) => {
+                // Sort by file size (largest first) for better overview
+                self.preview_files = files
+                    .into_iter()
+                    .map(|f| PreviewFileInfo {
+                        estimated_output_size: Some(webpify::converter::estimate_output_size(
+                            f.size,
+                            &self.mode,
+                            self.quality,
+                        )),
+                        path: f.path,
+                        size: f.size,
+                        format: f.format,
+                    })
+                    .collect();
+                self.preview_files.sort_by(|a, b| b.size.cmp(&a.size));
 
                 // If no files found, show helpful message
                 if self.preview_files.is_empty() {
@@ -1381,124 +1405,6 @@ impl WebpifyGuiApp {
                 self.error_message = Some(format!("Error scanning directory: {}", e));
             }
         }
-    }
-
-    fn scan_directory_safe(
-        &mut self,
-        dir: &PathBuf,
-        formats: &[String],
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        use std::fs;
-
-        // Safety check to prevent infinite recursion or too deep scanning
-        if self.preview_files.len() >= 100 {
-            return Ok(()); // Stop scanning if we already have enough files
-        }
-
-        let entries = match fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(e) => {
-                // Instead of printing to stderr, return a proper error for GUI handling
-                return Err(format!("Cannot read directory {}: {}", dir.display(), e).into());
-            }
-        };
-
-        for entry in entries {
-            if self.preview_files.len() >= 100 {
-                break; // Stop if we have enough files
-            }
-
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(e) => {
-                    eprintln!("Warning: Error reading directory entry: {}", e);
-                    continue;
-                }
-            };
-
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Cannot determine file type for {}: {}",
-                        entry.path().display(),
-                        e
-                    );
-                    continue;
-                }
-            };
-
-            if file_type.is_file() {
-                let path = entry.path();
-                if let Some(extension) = path.extension() {
-                    let ext = extension.to_string_lossy().to_lowercase();
-                    if formats.contains(&ext) {
-                        match fs::metadata(&path) {
-                            Ok(metadata) => {
-                                // Estimate output size based on compression mode and quality
-                                let estimated_size = self.estimate_webp_size(metadata.len());
-
-                                self.preview_files.push(PreviewFileInfo {
-                                    path: path.clone(),
-                                    size: metadata.len(),
-                                    format: ext,
-                                    estimated_output_size: Some(estimated_size),
-                                });
-                            }
-                            Err(e) => {
-                                // Log the error but continue processing other files
-                                eprintln!(
-                                    "Warning: Could not read metadata for {}: {}",
-                                    path.display(),
-                                    e
-                                );
-                            }
-                        }
-                    }
-                }
-            } else if file_type.is_dir() && self.preserve_structure {
-                // Recursively scan subdirectories if preserve_structure is enabled
-                // Use a depth limit to prevent infinite recursion
-                if let Some(depth) = self.get_directory_depth(&entry.path(), dir) {
-                    if depth < 5 {
-                        // Reduced depth limit for safety
-                        if let Err(e) = self.scan_directory_safe(&entry.path(), formats) {
-                            eprintln!(
-                                "Warning: Error scanning subdirectory {}: {}",
-                                entry.path().display(),
-                                e
-                            );
-                            // Continue with other directories instead of failing completely
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_directory_depth(&self, path: &PathBuf, base: &PathBuf) -> Option<usize> {
-        path.strip_prefix(base).ok().map(|p| p.components().count())
-    }
-
-    fn estimate_webp_size(&self, original_size: u64) -> u64 {
-        // Rough estimation based on compression mode and quality
-        let compression_factor = match self.mode {
-            CompressionMode::Lossless => 0.7, // Lossless typically saves 20-30%
-            CompressionMode::Lossy => {
-                // Lossy compression factor based on quality
-                match self.quality {
-                    90..=100 => 0.6,
-                    70..=89 => 0.4,
-                    50..=69 => 0.3,
-                    _ => 0.2,
-                }
-            }
-            CompressionMode::Auto => 0.5, // Conservative estimate for auto mode
-        };
-
-        (original_size as f64 * compression_factor) as u64
     }
 
     fn show_preview_modal(&mut self, ctx: &egui::Context) {

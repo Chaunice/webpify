@@ -12,8 +12,6 @@ preserve_structure = true
 overwrite = false
 # Number of parallel threads (default: CPU core count)
 threads = 8
-# Enable pre-processing scan (recommended for large batches)
-prescan = true
 # How to handle input files after conversion: off, recycle, delete
 replace_input = "off"
 # Force re-encoding of .webp files (default: false)

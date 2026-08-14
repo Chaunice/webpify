@@ -4,11 +4,14 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use walkdir::WalkDir;
 
 use crate::{
-    ConversionReport, ReplaceInputMode, config::ConversionOptions, converter::ImageConverter,
-    progress::ProgressReporter, stats::ConversionStats, utils::is_valid_image_file,
+    ConversionReport, ReplaceInputMode,
+    config::ConversionOptions,
+    converter::ImageConverter,
+    discovery::{DiscoveryOptions, discover_files},
+    progress::ProgressReporter,
+    stats::ConversionStats,
 };
 
 /// Core conversion engine that orchestrates the image conversion process
@@ -59,24 +62,25 @@ impl WebpifyCore {
         // Start timing
         self.stats.start_timer();
 
-        // Scan input files
-        let files = if self.options.prescan {
-            self.scan_input_files()?
-        } else {
-            self.scan_files_streaming()?
-        };
+        // Scan input files with the shared discovery rules
+        let files = discover_files(
+            &self.options.input_dir,
+            &DiscoveryOptions::from(&self.options),
+        )?;
 
         if files.is_empty() {
             return Ok(self.create_empty_report(start_time_utc, start_time, output_dir));
         }
 
+        let file_paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+
         // Report progress
         if let Some(reporter) = &progress_reporter {
-            reporter.set_total_files(files.len());
+            reporter.set_total_files(file_paths.len());
         }
 
         // Execute conversion
-        self.convert_images(&files, &output_dir, progress_reporter)?;
+        self.convert_images(&file_paths, &output_dir, progress_reporter)?;
 
         let duration = start_time.elapsed();
         let end_time_utc = Utc::now();
@@ -88,7 +92,7 @@ impl WebpifyCore {
             duration,
             input_dir: self.options.input_dir.clone(),
             output_dir,
-            total_files: files.len() as u64,
+            total_files: file_paths.len() as u64,
             processed_files: self.stats.processed_count.load(Ordering::Relaxed),
             failed_files: self.stats.error_count.load(Ordering::Relaxed),
             skipped_files: self.stats.skipped_count.load(Ordering::Relaxed),
@@ -105,66 +109,6 @@ impl WebpifyCore {
             format_stats: self.stats.get_format_stats(),
             errors: self.stats.get_errors(),
         })
-    }
-
-    /// Scan input files with progress updates
-    fn scan_input_files(&self) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        for entry in WalkDir::new(&self.options.input_dir)
-            .follow_links(false)
-            .into_iter()
-        {
-            let entry = entry.context("Failed to read directory entry")?;
-            let path = entry.path();
-
-            if !path.is_file() {
-                continue;
-            }
-
-            if !is_valid_image_file(path) {
-                continue;
-            }
-
-            // Check file extension
-            if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-                let ext_lower = extension.to_lowercase();
-                if !self.options.formats.contains(&ext_lower) {
-                    continue;
-                }
-
-                // Skip WebP files unless re-encoding is enabled
-                if ext_lower == "webp" && !self.options.reencode_webp {
-                    continue;
-                }
-            }
-
-            // Check file size constraints
-            if let Ok(metadata) = std::fs::metadata(path) {
-                let file_size = metadata.len();
-
-                if file_size < self.options.min_size * 1024 {
-                    continue;
-                }
-
-                if let Some(max_size) = self.options.max_size {
-                    if file_size > max_size * 1024 * 1024 {
-                        continue;
-                    }
-                }
-            }
-
-            files.push(path.to_path_buf());
-        }
-
-        Ok(files)
-    }
-
-    /// Streaming file scan (alternative implementation)
-    fn scan_files_streaming(&self) -> Result<Vec<PathBuf>> {
-        // For now, use the same implementation as scan_input_files
-        // This could be optimized for very large directories
-        self.scan_input_files()
     }
 
     /// Convert images with parallel processing
@@ -189,14 +133,14 @@ impl WebpifyCore {
                     self.stats.record_success(original_size, compressed_size);
 
                     // Handle input file replacement
-                    if !self.options.dry_run {
-                        if let Err(e) = self.handle_input_replacement(input_path) {
-                            log::warn!(
-                                "Failed to handle input replacement for {}: {}",
-                                input_path.display(),
-                                e
-                            );
-                        }
+                    if !self.options.dry_run
+                        && let Err(e) = self.handle_input_replacement(input_path)
+                    {
+                        log::warn!(
+                            "Failed to handle input replacement for {}: {}",
+                            input_path.display(),
+                            e
+                        );
                     }
                 }
                 Err(e) => {
