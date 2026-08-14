@@ -77,6 +77,7 @@ Options:
       --quiet                          Quiet mode (results only)
       --report                         Generate conversion report
       --report-format <REPORT_FORMAT>  Report output format [default: json] [possible values: json, csv, html]
+      --output-format <OUTPUT_FORMAT>  Output image format [default: webp] [possible values: webp, avif]
   -c, --config <FILE>                  Configuration file path
       --replace-input <REPLACE_INPUT>  How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] [default: off] [possible values: off, recycle, delete]
       --reencode-webp                  Force re-encoding of WebP files (by default, .webp files are skipped)
@@ -191,7 +192,7 @@ See `profiles.toml` in the repository for profile definitions and customization 
 ## 📝 TODO
 
 - [x] Add support for additional image formats (ICO, TGA, PNM, QOI, HDR, DDS, EXR, Farbfeld).
-- [ ] Consider adding AVIF output support.
+- [x] Add AVIF output support (`--output-format avif`; lossy/auto mode only — AVIF is slower to encode but typically 30-50% smaller than WebP).
 
 ## 📄 License
 

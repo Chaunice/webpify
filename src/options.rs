@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
-use crate::{CompressionMode, ConversionOptions, ProfileConfig, ReplaceInputMode, ReportFormat};
+use crate::{
+    CompressionMode, ConversionOptions, OutputFormat, ProfileConfig, ReplaceInputMode, ReportFormat,
+};
 
 /// Frontend-supplied values. `None` means "not specified — let config/default decide".
 pub struct FrontendOptions {
@@ -26,6 +28,7 @@ pub struct FrontendOptions {
     pub dry_run: Option<bool>,
     pub generate_report: Option<bool>,
     pub report_format: Option<ReportFormat>,
+    pub output_format: Option<OutputFormat>,
     pub verbose: Option<bool>,
     pub quiet: Option<bool>,
     pub config_file: Option<PathBuf>,
@@ -71,6 +74,12 @@ pub fn assemble(frontend: FrontendOptions) -> Result<(ConversionOptions, CliSett
         apply_profile(&mut options, profile)?;
     }
     apply_frontend(&mut options, &mut cli, &frontend);
+
+    // AVIF encoding is lossy-only (ravif); reject the combination up front
+    // so a batch run fails at start, not after 500 files.
+    if options.output_format == OutputFormat::Avif && options.mode == CompressionMode::Lossless {
+        anyhow::bail!("AVIF output only supports lossy or auto compression mode");
+    }
 
     Ok((options, cli))
 }
@@ -168,6 +177,9 @@ fn apply_config(
         if let Some(report_format) = &output.report_format {
             options.report_format = parse_report_format(report_format)?;
         }
+        if let Some(format) = &output.format {
+            options.output_format = parse_output_format(format)?;
+        }
     }
 
     Ok(())
@@ -249,6 +261,9 @@ fn apply_frontend(
     if let Some(report_format) = &frontend.report_format {
         options.report_format = report_format.clone();
     }
+    if let Some(output_format) = &frontend.output_format {
+        options.output_format = output_format.clone();
+    }
     if let Some(verbose) = frontend.verbose {
         cli.verbose = verbose;
     }
@@ -295,6 +310,14 @@ fn parse_report_format(value: &str) -> Result<ReportFormat> {
         "csv" => Ok(ReportFormat::Csv),
         "html" => Ok(ReportFormat::Html),
         other => anyhow::bail!("unknown report format {other:?} (expected json, csv, or html)"),
+    }
+}
+
+fn parse_output_format(value: &str) -> Result<OutputFormat> {
+    match value.trim().to_lowercase().as_str() {
+        "webp" => Ok(OutputFormat::Webp),
+        "avif" => Ok(OutputFormat::Avif),
+        other => anyhow::bail!("unknown output format {other:?} (expected webp or avif)"),
     }
 }
 
@@ -346,6 +369,7 @@ threads = 8
             dry_run: None,
             generate_report: None,
             report_format: None,
+            output_format: None,
             verbose: None,
             quiet: None,
             config_file: None,
@@ -437,6 +461,33 @@ threads = 8
         fs::write(&bad, "[compression]\nmode = \"bogus\"\n").unwrap();
         let mut fe = base("/in");
         fe.config_file = Some(bad);
+        assert!(assemble(fe).is_err());
+    }
+
+    #[test]
+    fn avif_requires_lossy_or_auto() {
+        let mut fe = base("/in");
+        fe.output_format = Some(OutputFormat::Avif);
+        fe.mode = Some(CompressionMode::Lossless);
+        let err = assemble(fe).unwrap_err();
+        assert!(err.to_string().contains("AVIF output only supports"));
+
+        let mut fe = base("/in");
+        fe.output_format = Some(OutputFormat::Avif);
+        fe.mode = Some(CompressionMode::Lossy);
+        let (options, _cli) = assemble(fe).unwrap();
+        assert_eq!(options.output_format, OutputFormat::Avif);
+
+        // config-driven avif + lossless also rejected
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "[output]\nformat = \"avif\"\n\n[compression]\nmode = \"lossless\"\n",
+        )
+        .unwrap();
+        let mut fe = base("/in");
+        fe.config_file = Some(path);
         assert!(assemble(fe).is_err());
     }
 

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{CompressionMode, ReplaceInputMode, ReportFormat};
+use crate::{CompressionMode, OutputFormat, ReplaceInputMode, ReportFormat};
 
 /// Main configuration structure loaded from config files
 #[derive(Debug, Deserialize)]
@@ -61,6 +61,8 @@ pub struct OutputConfig {
     pub quiet: Option<bool>,
     pub generate_report: Option<bool>,
     pub report_format: Option<String>,
+    /// Output image format: webp or avif
+    pub format: Option<String>,
 }
 
 /// Conversion options that can be passed to the core library
@@ -81,6 +83,7 @@ pub struct ConversionOptions {
     pub dry_run: bool,
     pub generate_report: bool,
     pub report_format: ReportFormat,
+    pub output_format: OutputFormat,
 }
 
 impl Default for ConversionOptions {
@@ -117,6 +120,7 @@ impl Default for ConversionOptions {
             dry_run: false,
             generate_report: false,
             report_format: ReportFormat::Json,
+            output_format: OutputFormat::Webp,
         }
     }
 }

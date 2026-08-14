@@ -101,6 +101,22 @@ pub enum CompressionMode {
     Auto,
 }
 
+/// Output format for converted images
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutputFormat {
+    Webp,
+    Avif,
+}
+
+impl OutputFormat {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            OutputFormat::Webp => "webp",
+            OutputFormat::Avif => "avif",
+        }
+    }
+}
+
 /// How to handle input files after successful conversion
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReplaceInputMode {

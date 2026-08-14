@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 // Use the library
 use webpify::{
-    CompressionMode, ConversionReport, ReplaceInputMode, ReportFormat, WebpifyCore,
+    CompressionMode, ConversionReport, OutputFormat, ReplaceInputMode, ReportFormat, WebpifyCore,
     generate_report,
     options::{FrontendOptions, assemble},
 };
@@ -99,6 +99,10 @@ pub struct Args {
     #[arg(long, value_enum)]
     pub report_format: Option<ReportFormatArg>,
 
+    /// Output image format (default: webp)
+    #[arg(long, value_enum)]
+    pub output_format: Option<OutputFormatArg>,
+
     /// Configuration file path
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
@@ -158,6 +162,23 @@ impl From<ReportFormatArg> for ReportFormat {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+pub enum OutputFormatArg {
+    /// WebP format (default)
+    Webp,
+    /// AVIF format (lossy/auto mode only)
+    Avif,
+}
+
+impl From<OutputFormatArg> for OutputFormat {
+    fn from(format: OutputFormatArg) -> Self {
+        match format {
+            OutputFormatArg::Webp => OutputFormat::Webp,
+            OutputFormatArg::Avif => OutputFormat::Avif,
+        }
+    }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
 pub enum ReplaceInputModeArg {
     /// Do not delete input files (default)
     Off,
@@ -203,6 +224,7 @@ fn main() -> Result<()> {
         dry_run: args.dry_run.then_some(true),
         generate_report: args.report.then_some(true),
         report_format: args.report_format.map(Into::into),
+        output_format: args.output_format.map(Into::into),
         verbose: args.verbose.then_some(true),
         quiet: args.quiet.then_some(true),
         config_file: args.config.clone(),

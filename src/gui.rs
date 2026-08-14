@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use webpify::{
-    CompressionMode, ConversionReport, ProgressReporter, ReplaceInputMode, ReportFormat,
-    WebpifyCore,
+    CompressionMode, ConversionReport, OutputFormat, ProgressReporter, ReplaceInputMode,
+    ReportFormat, WebpifyCore,
 };
 
 /// Icon definitions optimized for Windows 11 with semantic meaning
@@ -92,6 +92,7 @@ pub struct WebpifyGuiApp {
     // Basic Conversion Settings
     quality: u8,
     mode: CompressionMode,
+    output_format: OutputFormat,
     threads: String,
     threads_auto: bool,
 
@@ -155,6 +156,7 @@ impl Default for WebpifyGuiApp {
             // Basic Conversion Settings
             quality: 80,
             mode: CompressionMode::Lossless,
+            output_format: OutputFormat::Webp,
             threads: num_cpus::get().to_string(),
             threads_auto: true,
 
@@ -832,6 +834,27 @@ impl WebpifyGuiApp {
                                 .italics()
                                 .color(egui::Color32::GRAY),
                         );
+
+                        // Output format
+                        ui.add_space(10.0);
+                        ui.label("Output Format:");
+                        egui::ComboBox::from_id_salt("output_format")
+                            .selected_text(match self.output_format {
+                                OutputFormat::Webp => "🖼️ WebP (default)",
+                                OutputFormat::Avif => "🚀 AVIF (smaller, lossy only)",
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.output_format,
+                                    OutputFormat::Webp,
+                                    "🖼️ WebP (default)",
+                                );
+                                ui.selectable_value(
+                                    &mut self.output_format,
+                                    OutputFormat::Avif,
+                                    "🚀 AVIF (smaller, lossy only)",
+                                );
+                            });
                     });
                 });
 
@@ -1393,6 +1416,7 @@ impl WebpifyGuiApp {
                             f.size,
                             &self.mode,
                             self.quality,
+                            &self.output_format,
                         )),
                         path: f.path,
                         size: f.size,
@@ -1884,6 +1908,7 @@ impl WebpifyGuiApp {
             dry_run: Some(self.dry_run),
             generate_report: Some(self.generate_report),
             report_format: Some(self.report_format.clone()),
+            output_format: Some(self.output_format.clone()),
             verbose: Some(self.verbose),
             quiet: Some(self.quiet),
             config_file: None,

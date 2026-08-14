@@ -42,3 +42,5 @@ quiet = false
 generate_report = true
 # Report format: json, csv, html
 report_format = "json"
+# Output image format: webp or avif (avif is lossy/auto only)
+format = "webp"

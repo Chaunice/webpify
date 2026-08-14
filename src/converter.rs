@@ -1,13 +1,19 @@
 use anyhow::{Context, Result};
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
-use webp::{Encoder, WebPMemory};
+use webp::Encoder;
 
-use crate::CompressionMode;
+use crate::{CompressionMode, OutputFormat};
 
-/// Estimate the compressed size for a given original size, mode and quality.
-/// The single estimator shared by dry-run reporting and the GUI preview.
-pub fn estimate_output_size(original_size: u64, mode: &CompressionMode, quality: u8) -> u64 {
+/// Estimate the compressed size for a given original size, mode, quality and
+/// output format. The single estimator shared by dry-run reporting and the
+/// GUI preview.
+pub fn estimate_output_size(
+    original_size: u64,
+    mode: &CompressionMode,
+    quality: u8,
+    output_format: &OutputFormat,
+) -> u64 {
     let factor = match mode {
         CompressionMode::Lossless => 0.7, // Lossless typically saves 20-30%
         CompressionMode::Lossy => match quality {
@@ -18,12 +24,19 @@ pub fn estimate_output_size(original_size: u64, mode: &CompressionMode, quality:
         },
         CompressionMode::Auto => 0.5, // Conservative estimate for auto mode
     };
+    // AVIF typically lands 30-50% below WebP at the same quality
+    let factor = if output_format == &OutputFormat::Avif {
+        factor * 0.6
+    } else {
+        factor
+    };
     (original_size as f64 * factor) as u64
 }
 
 pub struct ImageConverter {
     quality: f32,
     mode: CompressionMode,
+    output_format: OutputFormat,
     // Ultra-fast mode for maximum performance
     ultra_fast: bool,
     // Dry run mode - preview without actual conversion
@@ -31,10 +44,16 @@ pub struct ImageConverter {
 }
 
 impl ImageConverter {
-    pub fn new_with_dry_run(quality: u8, mode: &CompressionMode, dry_run: bool) -> Self {
+    pub fn new_with_dry_run(
+        quality: u8,
+        mode: &CompressionMode,
+        output_format: &OutputFormat,
+        dry_run: bool,
+    ) -> Self {
         Self {
             quality: quality as f32,
             mode: mode.clone(),
+            output_format: output_format.clone(),
             ultra_fast: true,
             dry_run,
         }
@@ -48,7 +67,12 @@ impl ImageConverter {
             self.analyze_conversion(input_path, output_path)?;
             return Ok((
                 original_size,
-                estimate_output_size(original_size, &self.mode, self.quality as u8),
+                estimate_output_size(
+                    original_size,
+                    &self.mode,
+                    self.quality as u8,
+                    &self.output_format,
+                ),
             ));
         }
 
@@ -64,8 +88,9 @@ impl ImageConverter {
 
         // Choose conversion strategy based on mode
         match self.mode {
-            CompressionMode::Lossless => self.convert_lossless_fast(&processed_img, output_path),
-            CompressionMode::Lossy => self.convert_lossy_fast(&processed_img, output_path),
+            CompressionMode::Lossless | CompressionMode::Lossy => {
+                self.encode_output(&processed_img, output_path, &self.mode)
+            }
             CompressionMode::Auto => {
                 self.convert_auto_fast(&processed_img, output_path, input_path)
             }
@@ -109,29 +134,44 @@ impl ImageConverter {
         Ok(())
     }
 
-    fn convert_lossless_fast(&self, img: &DynamicImage, output_path: &Path) -> Result<()> {
-        let encoder = Encoder::from_image(img)
-            .map_err(|e| anyhow::anyhow!("Failed to create encoder: {}", e))?;
-
-        // Performance: Use faster encoding method with error handling
-        let webp_data = encoder.encode_lossless();
-        self.save_webp_data_fast(&webp_data, output_path)
-    }
-
-    fn convert_lossy_fast(&self, img: &DynamicImage, output_path: &Path) -> Result<()> {
-        let encoder = Encoder::from_image(img)
-            .map_err(|e| anyhow::anyhow!("Failed to create encoder: {}", e))?;
-
-        // Performance: Use ultra-fast encoding with optimized quality
-        let quality = if self.ultra_fast && self.quality > 85.0 {
-            // For ultra-fast mode, cap quality to balance speed vs size
-            85.0
-        } else {
-            self.quality
-        };
-
-        let webp_data = encoder.encode(quality);
-        self.save_webp_data_fast(&webp_data, output_path)
+    fn encode_output(
+        &self,
+        img: &DynamicImage,
+        output_path: &Path,
+        mode: &CompressionMode,
+    ) -> Result<()> {
+        match self.output_format {
+            OutputFormat::Webp => {
+                let encoder = Encoder::from_image(img)
+                    .map_err(|e| anyhow::anyhow!("Failed to create encoder: {}", e))?;
+                let quality = if self.ultra_fast && self.quality > 85.0 {
+                    85.0
+                } else {
+                    self.quality
+                };
+                let webp_data = match mode {
+                    CompressionMode::Lossless => encoder.encode_lossless(),
+                    CompressionMode::Lossy | CompressionMode::Auto => encoder.encode(quality),
+                };
+                std::fs::write(output_path, &*webp_data)
+                    .with_context(|| format!("Failed to save file: {}", output_path.display()))?;
+                Ok(())
+            }
+            OutputFormat::Avif => {
+                // ponytail: speed 6 chosen as batch-tool compromise; expose a
+                // --avif-speed flag if encoding speed ever matters to users
+                const AVIF_ENCODE_SPEED: u8 = 6;
+                let file = std::fs::File::create(output_path)
+                    .with_context(|| format!("Failed to create file: {}", output_path.display()))?;
+                let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(
+                    file,
+                    AVIF_ENCODE_SPEED,
+                    self.quality as u8,
+                );
+                img.write_with_encoder(encoder)
+                    .with_context(|| format!("Failed to encode AVIF: {}", output_path.display()))
+            }
+        }
     }
 
     fn convert_auto_fast(
@@ -143,11 +183,12 @@ impl ImageConverter {
         // Smart strategy selection: automatically choose compression mode based on image characteristics
         let should_use_lossless = self.should_use_lossless_fast(img, input_path);
 
-        if should_use_lossless {
-            self.convert_lossless_fast(img, output_path)
+        let mode = if should_use_lossless {
+            CompressionMode::Lossless
         } else {
-            self.convert_lossy_fast(img, output_path)
-        }
+            CompressionMode::Lossy
+        };
+        self.encode_output(img, output_path, &mode)
     }
 
     fn should_use_lossless_fast(&self, img: &DynamicImage, input_path: &Path) -> bool {
@@ -226,13 +267,6 @@ impl ImageConverter {
         has_transparency || unique_colors.len() < 64
     }
 
-    fn save_webp_data_fast(&self, webp_data: &WebPMemory, output_path: &Path) -> Result<()> {
-        // Performance: Use optimized file writing with correct dereferencing
-        std::fs::write(output_path, &**webp_data)
-            .with_context(|| format!("Failed to save WebP file: {}", output_path.display()))?;
-        Ok(())
-    }
-
     /// Validate and potentially resize image to fit WebP constraints
     /// Returns None if no resizing is needed, Some(resized_image) if resizing was performed
     fn validate_and_resize_image(&self, img: &DynamicImage) -> Result<Option<DynamicImage>> {
@@ -282,10 +316,50 @@ mod tests {
             CompressionMode::Lossy,
             CompressionMode::Auto,
         ] {
-            for quality in [0, 50, 80, 95] {
-                let estimate = estimate_output_size(1000, &mode, quality);
-                assert!(estimate <= 1000, "{mode:?} q{quality}: {estimate}");
+            for format in [OutputFormat::Webp, OutputFormat::Avif] {
+                for quality in [0, 50, 80, 95] {
+                    let estimate = estimate_output_size(1000, &mode, quality, &format);
+                    assert!(
+                        estimate <= 1000,
+                        "{mode:?}/{format:?} q{quality}: {estimate}"
+                    );
+                }
             }
         }
+    }
+
+    #[test]
+    fn avif_estimate_is_below_webp_estimate() {
+        let webp = estimate_output_size(1000, &CompressionMode::Lossy, 80, &OutputFormat::Webp);
+        let avif = estimate_output_size(1000, &CompressionMode::Lossy, 80, &OutputFormat::Avif);
+        assert!(avif < webp);
+    }
+
+    #[test]
+    fn encodes_real_avif_file() {
+        use image::RgbImage;
+
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.png");
+        let output = dir.path().join("out.avif");
+        RgbImage::from_pixel(16, 16, image::Rgb([200, 100, 50]))
+            .save(&input)
+            .unwrap();
+
+        let converter = ImageConverter::new_with_dry_run(
+            80,
+            &CompressionMode::Lossy,
+            &OutputFormat::Avif,
+            false,
+        );
+        converter.convert_to_webp(&input, &output).unwrap();
+
+        let bytes = std::fs::read(&output).unwrap();
+        assert!(bytes.len() > 12, "avif output too small");
+        assert_eq!(&bytes[4..8], b"ftyp", "avif must start with an ftyp box");
+        assert!(
+            &bytes[8..12] == b"avif" || &bytes[8..12] == b"avis",
+            "avif brand missing"
+        );
     }
 }

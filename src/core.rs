@@ -127,6 +127,7 @@ impl WebpifyCore {
         let converter = ImageConverter::new_with_dry_run(
             self.options.quality,
             &self.options.mode,
+            &self.options.output_format,
             self.options.dry_run,
         );
 
@@ -239,8 +240,8 @@ impl WebpifyCore {
             output_dir.join(input_path.file_name().context("Failed to get filename")?)
         };
 
-        // Change extension to .webp
-        Ok(output_path.with_extension("webp"))
+        // Change extension to the output format
+        Ok(output_path.with_extension(self.options.output_format.extension()))
     }
 
     /// Handle input file replacement after successful conversion
