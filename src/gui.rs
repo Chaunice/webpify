@@ -159,7 +159,8 @@ impl Default for WebpifyGuiApp {
             threads_auto: true,
 
             // File Processing Settings
-            formats: "jpg,jpeg,png,gif,bmp,tiff,webp".to_string(),
+            formats: "jpg,jpeg,png,gif,bmp,tiff,webp,ico,tga,pnm,qoi,hdr,dds,exr,farbfeld"
+                .to_string(),
             overwrite: false,
             preserve_structure: true,
             max_size: String::new(),

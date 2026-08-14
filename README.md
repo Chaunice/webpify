@@ -68,7 +68,7 @@ Options:
   -q, --quality <QUALITY>              WebP compression quality (0-100) [default: 80]
   -t, --threads <NUM>                  Number of parallel threads (defaults to CPU core count for I/O optimization)
   -m, --mode <MODE>                    Compression mode [default: lossless] [possible values: lossless, lossy, auto]
-      --formats <FORMATS>              Supported input formats (defaults to common formats) [default: jpg jpeg png gif bmp tiff webp]
+      --formats <FORMATS>              Supported input formats (all common formats by default)
       --overwrite                      Overwrite existing files
       --preserve-structure             Preserve original directory structure
       --max-size <SIZE>                Maximum file size limit (MB)
@@ -141,7 +141,7 @@ quality = 85
 mode = "auto" # lossless, lossy, auto
 
 [filtering]
-formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga", "pnm", "qoi", "hdr", "dds", "exr", "farbfeld"]
 min_size = 1
 max_size = 0
 
@@ -190,7 +190,7 @@ See `profiles.toml` in the repository for profile definitions and customization 
 
 ## 📝 TODO
 
-- [ ] Add support for additional image formats.
+- [x] Add support for additional image formats (ICO, TGA, PNM, QOI, HDR, DDS, EXR, Farbfeld).
 - [ ] Consider adding AVIF output support.
 
 ## 📄 License

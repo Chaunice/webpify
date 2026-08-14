@@ -27,7 +27,7 @@ mode = "auto"
 
 [filtering]
 # List of allowed input formats
-formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga", "pnm", "qoi", "hdr", "dds", "exr", "farbfeld"]
 # Minimum file size in KB
 min_size = 1
 # Maximum file size in MB (set to 0 for unlimited)

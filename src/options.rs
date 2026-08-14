@@ -367,7 +367,7 @@ threads = 8
         assert_eq!(options.mode, CompressionMode::Lossless);
         assert_eq!(options.threads, None);
         assert_eq!(options.replace_input, ReplaceInputMode::Off);
-        assert_eq!(options.formats.len(), 7);
+        assert_eq!(options.formats.len(), 15);
         assert!(!options.generate_report);
         assert_eq!(options.report_format, ReportFormat::Json);
         assert!(!cli.verbose && !cli.quiet);
