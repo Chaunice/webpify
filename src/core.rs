@@ -66,7 +66,7 @@ impl WebpifyCore {
         )?;
 
         if files.is_empty() {
-            return Ok(self.create_empty_report(start_time_utc, start_time, output_dir));
+            return Ok(self.base_report(start_time_utc, start_time, output_dir));
         }
 
         let file_paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
@@ -79,33 +79,42 @@ impl WebpifyCore {
         // Execute conversion
         self.convert_images(&file_paths, &output_dir, progress_reporter)?;
 
-        let duration = start_time.elapsed();
-        let end_time_utc = Utc::now();
+        let mut report = self.base_report(start_time_utc, start_time, output_dir);
+        report.total_files = file_paths.len() as u64;
+        report.processed_files = self.stats.processed_count.load(Ordering::Relaxed);
+        report.failed_files = self.stats.error_count.load(Ordering::Relaxed);
+        report.skipped_files = self.stats.skipped_count.load(Ordering::Relaxed);
+        report.original_size = self.stats.original_size.load(Ordering::Relaxed);
+        report.compressed_size = self.stats.compressed_size.load(Ordering::Relaxed);
+        report.compression_ratio = self.stats.get_compression_ratio();
+        report.files_per_second = self.stats.processed_count.load(Ordering::Relaxed) as f64
+            / report.duration.as_secs_f64();
+        report.bytes_per_second = (self.stats.compressed_size.load(Ordering::Relaxed) as f64
+            / report.duration.as_secs_f64()) as u64;
+        report.format_stats = self.stats.get_format_stats();
+        report.errors = self.stats.get_errors();
 
-        // Create final report
-        Ok(ConversionReport {
-            start_time: start_time_utc,
-            end_time: end_time_utc,
-            duration,
+        Ok(report)
+    }
+
+    /// Build the report skeleton shared by every run outcome.
+    fn base_report(
+        &self,
+        start_time: chrono::DateTime<Utc>,
+        start_instant: Instant,
+        output_dir: PathBuf,
+    ) -> ConversionReport {
+        ConversionReport {
+            start_time,
+            end_time: Utc::now(),
+            duration: start_instant.elapsed(),
             input_dir: self.options.input_dir.clone(),
             output_dir,
-            total_files: file_paths.len() as u64,
-            processed_files: self.stats.processed_count.load(Ordering::Relaxed),
-            failed_files: self.stats.error_count.load(Ordering::Relaxed),
-            skipped_files: self.stats.skipped_count.load(Ordering::Relaxed),
-            original_size: self.stats.original_size.load(Ordering::Relaxed),
-            compressed_size: self.stats.compressed_size.load(Ordering::Relaxed),
-            compression_ratio: self.stats.get_compression_ratio(),
-            files_per_second: self.stats.processed_count.load(Ordering::Relaxed) as f64
-                / duration.as_secs_f64(),
-            bytes_per_second: (self.stats.compressed_size.load(Ordering::Relaxed) as f64
-                / duration.as_secs_f64()) as u64,
             thread_count: rayon::current_num_threads(),
             quality: self.options.quality,
             mode: format!("{:?}", self.options.mode),
-            format_stats: self.stats.get_format_stats(),
-            errors: self.stats.get_errors(),
-        })
+            ..ConversionReport::default()
+        }
     }
 
     /// Convert images with parallel processing
@@ -249,39 +258,6 @@ impl WebpifyCore {
                     .with_context(|| format!("Failed to delete file: {}", input_path.display()))?;
                 Ok(())
             }
-        }
-    }
-
-    /// Create an empty report for when no files are found
-    fn create_empty_report(
-        &self,
-        start_time_utc: chrono::DateTime<Utc>,
-        start_time: Instant,
-        output_dir: PathBuf,
-    ) -> ConversionReport {
-        let duration = start_time.elapsed();
-        let end_time_utc = Utc::now();
-
-        ConversionReport {
-            start_time: start_time_utc,
-            end_time: end_time_utc,
-            duration,
-            input_dir: self.options.input_dir.clone(),
-            output_dir,
-            total_files: 0,
-            processed_files: 0,
-            failed_files: 0,
-            skipped_files: 0,
-            original_size: 0,
-            compressed_size: 0,
-            compression_ratio: 0.0,
-            files_per_second: 0.0,
-            bytes_per_second: 0,
-            thread_count: rayon::current_num_threads(),
-            quality: self.options.quality,
-            mode: format!("{:?}", self.options.mode),
-            format_stats: std::collections::HashMap::new(),
-            errors: vec!["No supported image files found in the specified directory".to_string()],
         }
     }
 

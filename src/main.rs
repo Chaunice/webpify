@@ -276,6 +276,10 @@ fn print_ascii_banner() {
 fn print_results_summary(report: &ConversionReport) {
     use humansize::{DECIMAL, format_size};
 
+    if report.processed_files == 0 && report.failed_files == 0 {
+        println!("⚠️  No supported image files found in the specified directory");
+    }
+
     println!("\n🎉 Conversion completed!");
     println!("📊 Results Summary:");
     println!("  ✅ Processed: {} files", report.processed_files);

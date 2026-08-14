@@ -54,6 +54,34 @@ pub struct ConversionReport {
     pub errors: Vec<String>,
 }
 
+impl Default for ConversionReport {
+    /// Empty report — the base every run outcome starts from.
+    fn default() -> Self {
+        let now = Utc::now();
+        Self {
+            start_time: now,
+            end_time: now,
+            duration: Duration::ZERO,
+            input_dir: PathBuf::new(),
+            output_dir: PathBuf::new(),
+            total_files: 0,
+            processed_files: 0,
+            failed_files: 0,
+            skipped_files: 0,
+            original_size: 0,
+            compressed_size: 0,
+            compression_ratio: 0.0,
+            files_per_second: 0.0,
+            bytes_per_second: 0,
+            thread_count: 0,
+            quality: 0,
+            mode: String::new(),
+            format_stats: HashMap::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
 /// Report output formats
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReportFormat {
@@ -182,4 +210,19 @@ fn generate_html_report(report: &ConversionReport) -> Result<()> {
     std::fs::write(report_path, html)?;
     println!("Report saved to: {report_path}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_report_is_all_zeroes_with_no_errors() {
+        let report = ConversionReport::default();
+        assert_eq!(report.total_files, 0);
+        assert_eq!(report.processed_files, 0);
+        assert_eq!(report.failed_files, 0);
+        assert!(report.errors.is_empty());
+        assert!(report.format_stats.is_empty());
+    }
 }

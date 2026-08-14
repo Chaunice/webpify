@@ -203,6 +203,13 @@ impl eframe::App for WebpifyGuiApp {
                 self.is_converting = false;
                 if let Some(report) = &reporter.report {
                     self.last_report = Some(report.clone());
+                    // Nothing was found or converted — tell the user instead
+                    // of showing an empty success screen
+                    if report.processed_files == 0 && report.failed_files == 0 {
+                        self.error_message = Some(
+                            "No supported image files found in the specified directory".to_string(),
+                        );
+                    }
                     // Auto-switch to results tab when conversion finishes
                     self.current_tab = Tab::Results;
                 }
