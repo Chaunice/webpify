@@ -70,11 +70,9 @@ pub fn discover_files(input_dir: &Path, opts: &DiscoveryOptions) -> Result<Vec<F
             continue;
         };
 
-        // Extension + webp rule first (cheap), then header validation, then size.
+        // Extension + webp rule first (cheap), then size (no open), then
+        // header validation (only opens files that will actually convert).
         if !opts.formats.contains(&format) || (format == "webp" && !opts.reencode_webp) {
-            continue;
-        }
-        if !is_valid_image_file(path) {
             continue;
         }
 
@@ -88,6 +86,10 @@ pub fn discover_files(input_dir: &Path, opts: &DiscoveryOptions) -> Result<Vec<F
         if let Some(max_size_mb) = opts.max_size_mb
             && size > max_size_mb * 1024 * 1024
         {
+            continue;
+        }
+
+        if !is_valid_image_file(path) {
             continue;
         }
 

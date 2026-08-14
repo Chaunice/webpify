@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
@@ -9,7 +11,7 @@ use crate::{
     ConversionReport, ReplaceInputMode,
     config::ConversionOptions,
     converter::ImageConverter,
-    discovery::{DiscoveryOptions, discover_files},
+    discovery::{DiscoveryOptions, FileInfo, discover_files},
     progress::ProgressReporter,
     stats::ConversionStats,
 };
@@ -18,6 +20,8 @@ use crate::{
 pub struct WebpifyCore {
     options: ConversionOptions,
     stats: ConversionStats,
+    /// Output directories already created — skips a stat+mkdir per file.
+    created_dirs: Mutex<HashSet<PathBuf>>,
 }
 
 impl WebpifyCore {
@@ -26,6 +30,7 @@ impl WebpifyCore {
         Self {
             options,
             stats: ConversionStats::new(),
+            created_dirs: Mutex::new(HashSet::new()),
         }
     }
 
@@ -42,19 +47,6 @@ impl WebpifyCore {
         let start_time = Instant::now();
         let start_time_utc = Utc::now();
 
-        // Setup thread pool (only if not already initialized)
-        if let Some(threads) = self.options.threads {
-            // Check if global pool is already initialized by trying to build a new one
-            if rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build_global()
-                .is_err()
-            {
-                // Thread pool already exists, just log a warning
-                log::debug!("Thread pool already initialized, using existing configuration");
-            }
-        }
-
         // Create output directory
         let output_dir = self.options.get_output_dir();
         std::fs::create_dir_all(&output_dir).context("Failed to create output directory")?;
@@ -69,18 +61,26 @@ impl WebpifyCore {
             return Ok(self.base_report(start_time_utc, start_time, output_dir));
         }
 
-        let file_paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
-
         // Report progress
         if let Some(reporter) = &progress_reporter {
-            reporter.set_total_files(file_paths.len());
+            reporter.set_total_files(files.len());
         }
 
-        // Execute conversion
-        self.convert_images(&file_paths, &output_dir, progress_reporter)?;
+        // Execute conversion. With an explicit thread count, run on a scoped
+        // pool so repeated runs (GUI) actually honor the current setting —
+        // the global pool can only be configured once per process.
+        let result = match self.options.threads {
+            Some(threads) => rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .context("Failed to build thread pool")?
+                .install(|| self.convert_images(&files, &output_dir, progress_reporter)),
+            None => self.convert_images(&files, &output_dir, progress_reporter),
+        };
+        result?;
 
         let mut report = self.base_report(start_time_utc, start_time, output_dir);
-        report.total_files = file_paths.len() as u64;
+        report.total_files = files.len() as u64;
         report.processed_files = self.stats.processed_count.load(Ordering::Relaxed);
         report.failed_files = self.stats.error_count.load(Ordering::Relaxed);
         report.skipped_files = self.stats.skipped_count.load(Ordering::Relaxed);
@@ -120,7 +120,7 @@ impl WebpifyCore {
     /// Convert images with parallel processing
     fn convert_images(
         &self,
-        files: &[PathBuf],
+        files: &[FileInfo],
         output_dir: &Path,
         progress_reporter: Option<Box<dyn ProgressReporter>>,
     ) -> Result<()> {
@@ -136,7 +136,8 @@ impl WebpifyCore {
             reporter.start_conversion();
         }
 
-        files.par_iter().for_each(|input_path| {
+        files.par_iter().for_each(|file| {
+            let input_path = &file.path;
             let result = self.process_single_file(&converter, input_path, output_dir);
 
             match result {
@@ -207,8 +208,16 @@ impl WebpifyCore {
             return Ok((0, 0)); // Skip without error
         }
 
-        // Create output directory if needed
-        if let Some(parent) = output_path.parent() {
+        // Create output directory if needed — once per directory, not per
+        // file: the output root already exists, so this is one cached insert
+        // instead of one stat+mkdir syscall per file.
+        if let Some(parent) = output_path.parent()
+            && self
+                .created_dirs
+                .lock()
+                .unwrap()
+                .insert(parent.to_path_buf())
+        {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
