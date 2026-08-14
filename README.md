@@ -1,206 +1,158 @@
 # webpify
 
-**webpify** is a high-performance batch image to WebP converter designed for large-scale image processing tasks. Efficiently converts various image formats to WebP with significant space savings.
+A batch image to WebP/AVIF converter written in Rust. Converts directories
+of images in parallel with configurable compression modes, output
+formatting, and report generation.
 
-## ✨ Features
+## Features
 
-- **Extreme Performance**: Multi-threaded parallel processing leveraging full CPU power
-- **Real-time Monitoring**: Beautiful progress bars with live statistics
-- **Smart Compression**: Supports lossy/lossless/auto modes with intelligent strategy selection
-- **Significant Space Savings**: WebP format saves 20-80% storage space
-- **Deep Scanning**: Recursive directory scanning with nested folder support
-- **Comprehensive Reports**: Generate JSON/CSV/HTML conversion reports
-- **Rock Solid**: Memory-safe, robust error handling, supports large file processing
-- **User Friendly**: Intuitive CLI with rich configuration options
+- Parallel conversion with configurable thread count (defaults to all cores)
+- Lossy, lossless, and auto compression modes (auto picks per image based on
+  content analysis)
+- WebP or AVIF output
+- Recursive directory scanning with optional structure preservation
+- Input filtering by format, minimum and maximum file size
+- Dry-run mode to preview what would be converted
+- Optional JSON/CSV/HTML reports
+- TOML configuration files and reusable profiles
+- Recycle-bin or permanent deletion of source files after conversion
 
-## 🚀 Quick Start
+Supported input formats: JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, TGA, PNM,
+QOI, HDR, DDS, EXR, Farbfeld.
 
-### Installation
+## Installation
 
-Download the latest release from the release page or build from source.
+Build from source with a Rust toolchain (edition 2024):
 
 ```bash
-# Build from source
-git clone https://github.com/chaunice/webpify.git
+git clone https://github.com/Chaunice/webpify.git
 cd webpify
 cargo build --release
 ```
 
-### Basic Usage
+The binary is `target/release/webpify`. A GUI build is available with
+`cargo build --release --features gui` (binary `webpify-gui`).
+
+## Usage
 
 ```bash
-# Convert single directory
+# Convert a directory into ./webp_output
+webpify -i ./photos
+
+# Explicit output directory
 webpify -i ./photos -o ./webp_output
 
-# High-quality lossy compression (recommended)
+# Lossy compression at quality 90
 webpify -i ./photos -q 90 -m lossy
 
-# Lossless compression (suitable for PNG, graphics)
-webpify -i ./graphics -m lossless
+# AVIF output (lossy or auto mode only)
+webpify -i ./photos --output-format avif
 
-# Auto mode (intelligent compression strategy selection)
-webpify -i ./mixed_images -m auto
+# 4 threads, skip files smaller than 10 KB
+webpify -i ./photos -t 4 --min-size 10
 
-# High-performance mode (16 threads parallel processing)
-webpify -i ./large_dataset -t 16 --quiet
+# Dry run: list what would be converted without writing anything
+webpify -i ./photos --dry-run --verbose
+
+# Predefined profile (see profiles below)
+webpify -i ./photos --profile web
 ```
 
-## 📖 Command Line Options
+### Options
 
-```text
-                    __                        ___             
-                   /\ \                __   /'___\            
- __  __  __     __ \ \ \____   _____  /\_\ /\ \__/  __  __    
-/\ \/\ \/\ \  /'__`\\ \ '__`\ /\ '__`\\/\ \\ \ ,__\/\ \/\ \   
-\ \ \_/ \_/ \/\  __/ \ \ \L\ \\ \ \L\ \\ \ \\ \ \_/\ \ \_\ \  
- \ \___x___/'\ \____\ \ \_,__/ \ \ ,__/ \ \_\\ \_\  \/`____ \ 
-  \/__//__/   \/____/  \/___/   \ \ \/   \/_/ \/_/   `/___/> \
-                                 \ \_\                  /\___/
-                                  \/_/                  \/__/ 
-
-webpify - High-performance batch WebP converter
-
+```
 Usage: webpify [OPTIONS] --input <DIR>
 
 Options:
   -i, --input <DIR>                    Input directory path
-  -o, --output <DIR>                   Output directory path (defaults to input_dir/webp_output)
-  -q, --quality <QUALITY>              WebP compression quality (0-100) [default: 80]
-  -t, --threads <NUM>                  Number of parallel threads (defaults to CPU core count for I/O optimization)
-  -m, --mode <MODE>                    Compression mode [default: lossless] [possible values: lossless, lossy, auto]
-      --formats <FORMATS>              Supported input formats (all common formats by default)
-      --overwrite                      Overwrite existing files
-      --preserve-structure             Preserve original directory structure
-      --max-size <SIZE>                Maximum file size limit (MB)
-      --min-size <SIZE>                Minimum file size limit (KB) [default: 1]
-  -v, --verbose                        Verbose output mode
-      --quiet                          Quiet mode (results only)
-      --report                         Generate conversion report
-      --report-format <REPORT_FORMAT>  Report output format [default: json] [possible values: json, csv, html]
-      --output-format <OUTPUT_FORMAT>  Output image format [default: webp] [possible values: webp, avif]
+  -o, --output <DIR>                   Output directory (default: <input>/webp_output)
+  -q, --quality <QUALITY>              Compression quality (0-100, default: 80)
+  -t, --threads <NUM>                  Parallel threads (default: CPU core count)
+  -m, --mode <MODE>                    Compression mode: lossless, lossy, auto
+      --formats <FORMATS>              Comma-separated input formats (default: all supported)
+      --overwrite                      Overwrite existing output files
+      --preserve-structure             Preserve directory structure in output
+      --max-size <SIZE>                Skip files larger than SIZE MB
+      --min-size <SIZE>                Skip files smaller than SIZE KB (default: 1)
+      --output-format <FORMAT>         Output format: webp, avif (default: webp)
+      --report                         Generate a conversion report
+      --report-format <FORMAT>         Report format: json, csv, html (default: json)
+      --replace-input <MODE>           Source handling after conversion: off, recycle, delete
+      --reencode-webp                  Also convert existing .webp files
+      --dry-run                        Preview operations without making changes
   -c, --config <FILE>                  Configuration file path
-      --replace-input <REPLACE_INPUT>  How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] [default: off] [possible values: off, recycle, delete]
-      --reencode-webp                  Force re-encoding of WebP files (by default, .webp files are skipped)
-      --dry-run                        Dry run mode - preview operations without making changes
-      --quality-metrics               Enable quality metrics calculation (SSIM/PSNR)
       --profile <PROFILE>              Use a predefined configuration profile
-  -h, --help                           Print help (see more with '--help')
+  -v, --verbose                        Verbose logging
+      --quiet                          Suppress progress output
+  -h, --help                           Print help
   -V, --version                        Print version
 ```
 
-## 🔧 Advanced Configuration
+## Configuration
 
-### Performance Tuning
+Configuration is TOML-based and optional. The tool looks for a config file
+in this order and loads the first one found:
 
-```bash
-# High concurrency (SSD or fast storage)
-webpify -i ./images -t 24
-
-# Low concurrency (HDD or slow storage, reduce random seeks)
-webpify -i ./images -t 4 --min-size 10
-
-# Memory-constrained environment
-webpify -i ./images -t 2 --max-size 10
-
-# Preview mode (dry run) - see what would be converted without making changes
-webpify -i ./images --dry-run --verbose
-
-# Use predefined profiles for common scenarios
-webpify -i ./images --profile web
-webpify -i ./images --profile print
-webpify -i ./images --profile archive
-```
-
-
-## 🛠 Example Configuration File
-
-webpify supports TOML config files for advanced and repeatable setups. The tool will automatically search for a config file in these locations (in order):
-
-1. Path specified by `--config <FILE>`
+1. Path given with `--config`
 2. `./webpify.config.toml` (current directory)
-3. `~/.config/webpify/config.toml` (Linux/macOS user config)
+3. `~/.config/webpify/config.toml` (user config)
 4. `~/.config/webpify/profiles.toml` (standalone profiles file)
 5. `/etc/webpify/config.toml` (system-wide, non-Windows)
 
-The first config file found will be loaded. CLI arguments always take precedence over config values, then profile values, then config file values.
-
-### `example.config.toml`
+Precedence: CLI arguments > profile values > config file values > defaults.
 
 ```toml
 [general]
-input_dir = "./images"
 output_dir = "./webp_output"
-preserve_structure = true
-overwrite = false
 threads = 8
-replace_input = "off" # off, recycle, delete
+replace_input = "off"   # off, recycle, delete
 reencode_webp = false
-dry_run = false # Enable preview mode
+dry_run = false
 
 [compression]
 quality = 85
-mode = "auto" # lossless, lossy, auto
+mode = "auto"           # lossless, lossy, auto
 
 [filtering]
-formats = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga", "pnm", "qoi", "hdr", "dds", "exr", "farbfeld"]
-min_size = 1
-max_size = 0
+formats = ["jpg", "png", "webp"]
+min_size = 1            # KB, 0 disables
+max_size = 0            # MB, 0 means unlimited
 
 [output]
-verbose = true
-quiet = false
 generate_report = true
-report_format = "json" # json, csv, html
+report_format = "json"  # json, csv, html
+format = "webp"         # webp, avif
 ```
 
-See `example.config.toml` in the repository for a full reference and comments.
+See [example.config.toml](example.config.toml) for a commented reference.
 
-## 📋 Configuration Profiles
+### Profiles
 
-webpify includes predefined configuration profiles for common use cases. Profiles provide optimized settings for different scenarios:
-
-### Available Profiles
-
-- **`web`** - Web-optimized images with good compression (quality: 85, auto mode)
-- **`print`** - High-quality images suitable for printing (quality: 95, lossless)
-- **`archive`** - Maximum compression for archival storage (quality: 70, lossy)
-- **`fast`** - Fast processing with reasonable quality (quality: 80, lossy)
-- **`lossless`** - Perfect quality preservation (quality: 100, lossless)
-
-### Using Profiles
+Profiles bundle common settings under a name. They live in the `profiles`
+table of a config file, or in a standalone `profiles.toml` (see discovery
+order above). `profiles.toml` in this repository is a sample you can copy
+to `~/.config/webpify/`.
 
 ```bash
-# Use web profile for website images
 webpify -i ./photos --profile web
-
-# Use print profile for high-quality output
-webpify -i ./artwork --profile print
-
-# Use archive profile for long-term storage
-webpify -i ./backup --profile archive
+webpify -i ./photos --profile print
+webpify -i ./artwork --profile archive
 ```
 
-Profiles are loaded from `profiles.toml` files in standard locations:
+## Reports
 
-1. `./profiles.toml` (current directory)
-2. Next to your config file (if using `--config`)
-3. `~/.config/webpify/profiles.toml` (Linux/macOS)
-4. `%APPDATA%\webpify\profiles.toml` (Windows)
+With `--report`, a summary is written to the working directory as
+`webpify_report.json`, `webpify_report.csv`, or `webpify_report.html`,
+containing per-run statistics: file counts, sizes, compression ratio,
+throughput, and per-file errors.
 
-See `profiles.toml` in the repository for profile definitions and customization options.
+## License
 
-## 📝 TODO
+MIT — see [LICENSE](LICENSE).
 
-- [x] Add support for additional image formats (ICO, TGA, PNM, QOI, HDR, DDS, EXR, Farbfeld).
-- [x] Add AVIF output support (`--output-format avif`; lossy/auto mode only — AVIF is slower to encode but typically 30-50% smaller than WebP).
+## Acknowledgments
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [image-rs](https://github.com/image-rs/image) - Powerful Rust image processing library
-- [webp](https://crates.io/crates/webp) - WebP encoding support
-- [rayon](https://github.com/rayon-rs/rayon) - Data parallelism framework
-- [clap](https://github.com/clap-rs/clap) - Command line argument parsing
+- [image-rs](https://github.com/image-rs/image) — image decoding and AVIF encoding
+- [webp](https://crates.io/crates/webp) — WebP encoding
+- [rayon](https://github.com/rayon-rs/rayon) — data parallelism
+- [clap](https://github.com/clap-rs/clap) — CLI parsing
