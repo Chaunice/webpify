@@ -59,9 +59,6 @@ impl WebpifyCore {
         let output_dir = self.options.get_output_dir();
         std::fs::create_dir_all(&output_dir).context("Failed to create output directory")?;
 
-        // Start timing
-        self.stats.start_timer();
-
         // Scan input files with the shared discovery rules
         let files = discover_files(
             &self.options.input_dir,
@@ -125,12 +122,27 @@ impl WebpifyCore {
         );
 
         // Process files in parallel
+        if let Some(reporter) = &progress_reporter {
+            reporter.start_conversion();
+        }
+
         files.par_iter().for_each(|input_path| {
             let result = self.process_single_file(&converter, input_path, output_dir);
 
             match result {
                 Ok((original_size, compressed_size)) => {
                     self.stats.record_success(original_size, compressed_size);
+
+                    // (0, 0) is the skip sentinel — not a conversion success
+                    if original_size > 0
+                        && let Some(reporter) = &progress_reporter
+                    {
+                        reporter.report_success(
+                            &input_path.display().to_string(),
+                            original_size,
+                            compressed_size,
+                        );
+                    }
 
                     // Handle input file replacement
                     if !self.options.dry_run
@@ -144,8 +156,12 @@ impl WebpifyCore {
                     }
                 }
                 Err(e) => {
+                    let message = format!("{e:#}");
                     self.stats
-                        .record_error(input_path.display().to_string(), format!("{e:#}"));
+                        .record_error(input_path.display().to_string(), message.clone());
+                    if let Some(reporter) = &progress_reporter {
+                        reporter.report_error(&input_path.display().to_string(), &message);
+                    }
                     log::error!("Failed to convert {}: {:#}", input_path.display(), e);
                 }
             }
@@ -158,6 +174,10 @@ impl WebpifyCore {
                 );
             }
         });
+
+        if let Some(reporter) = &progress_reporter {
+            reporter.finish_conversion();
+        }
 
         Ok(())
     }

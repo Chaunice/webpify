@@ -20,19 +20,12 @@ pub trait ProgressReporter: Send + Sync {
     fn report_success(&self, _file_path: &str, _original_size: u64, _compressed_size: u64) {}
 }
 
-/// A no-op progress reporter for when progress reporting is not needed
-pub struct NoOpProgressReporter;
-
-impl ProgressReporter for NoOpProgressReporter {
-    fn set_total_files(&self, _total: usize) {}
-    fn update_progress(&self, _processed: usize, _failed: usize) {}
-}
-
 /// Console-based progress reporter using indicatif
 #[cfg(feature = "cli")]
 pub struct ConsoleProgressReporter {
     progress_bar: indicatif::ProgressBar,
-    multi_progress: indicatif::MultiProgress,
+    // Kept alive: bars detach from a dropped MultiProgress and stop drawing
+    _multi_progress: indicatif::MultiProgress,
 }
 
 #[cfg(feature = "cli")]
@@ -58,12 +51,8 @@ impl ConsoleProgressReporter {
 
         Self {
             progress_bar,
-            multi_progress,
+            _multi_progress: multi_progress,
         }
-    }
-
-    pub fn get_multi_progress(&self) -> &indicatif::MultiProgress {
-        &self.multi_progress
     }
 }
 
@@ -93,7 +82,7 @@ impl ProgressReporter for ConsoleProgressReporter {
 
     fn report_success(&self, file_path: &str, original_size: u64, compressed_size: u64) {
         let ratio = if original_size > 0 {
-            ((original_size - compressed_size) as f64 / original_size as f64) * 100.0
+            (original_size.saturating_sub(compressed_size)) as f64 / original_size as f64 * 100.0
         } else {
             0.0
         };

@@ -1994,6 +1994,29 @@ impl ProgressReporter for ThreadSafeGuiProgressReporter {
             reporter.failed_files = failed;
         }
     }
+
+    fn report_success(&self, file_path: &str, original_size: u64, compressed_size: u64) {
+        let reduction = if original_size > 0 {
+            (original_size.saturating_sub(compressed_size)) as f64 / original_size as f64 * 100.0
+        } else {
+            0.0
+        };
+        if let Ok(mut reporter) = self.inner.lock() {
+            reporter.logs.push(format!(
+                "✅ {} ({} → {}, {:.0}% smaller)",
+                file_path,
+                humansize::format_size(original_size, humansize::DECIMAL),
+                humansize::format_size(compressed_size, humansize::DECIMAL),
+                reduction
+            ));
+        }
+    }
+
+    fn report_error(&self, file_path: &str, error: &str) {
+        if let Ok(mut reporter) = self.inner.lock() {
+            reporter.logs.push(format!("❌ {}: {}", file_path, error));
+        }
+    }
 }
 
 fn main() -> Result<(), eframe::Error> {
