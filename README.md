@@ -125,10 +125,10 @@ webpify supports TOML config files for advanced and repeatable setups. The tool 
 1. Path specified by `--config <FILE>`
 2. `./webpify.config.toml` (current directory)
 3. `~/.config/webpify/config.toml` (Linux/macOS user config)
-4. `%APPDATA%\webpify\config.toml` (Windows user config)
+4. `~/.config/webpify/profiles.toml` (standalone profiles file)
 5. `/etc/webpify/config.toml` (system-wide, non-Windows)
 
-The first config file found will be loaded. CLI arguments always take precedence over config values.
+The first config file found will be loaded. CLI arguments always take precedence over config values, then profile values, then config file values.
 
 ### `example.config.toml`
 

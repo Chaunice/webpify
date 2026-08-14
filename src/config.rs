@@ -117,101 +117,10 @@ impl Default for ConversionOptions {
 }
 
 impl ConversionOptions {
-    /// Create new conversion options with sensible defaults
-    pub fn new(input_dir: PathBuf) -> Self {
-        Self {
-            input_dir,
-            ..Default::default()
-        }
-    }
-
-    /// Builder pattern for setting quality
-    pub fn with_quality(mut self, quality: u8) -> Self {
-        self.quality = quality;
-        self
-    }
-
-    /// Builder pattern for setting compression mode
-    pub fn with_mode(mut self, mode: CompressionMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
-    /// Builder pattern for setting output directory
-    pub fn with_output_dir(mut self, output_dir: PathBuf) -> Self {
-        self.output_dir = Some(output_dir);
-        self
-    }
-
-    /// Builder pattern for setting thread count
-    pub fn with_threads(mut self, threads: usize) -> Self {
-        self.threads = Some(threads);
-        self
-    }
-
-    /// Builder pattern for enabling dry run mode
-    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
-        self.dry_run = dry_run;
-        self
-    }
-
-    /// Builder pattern for setting overwrite behavior
-    pub fn with_overwrite(mut self, overwrite: bool) -> Self {
-        self.overwrite = overwrite;
-        self
-    }
-
-    /// Builder pattern for setting preserve structure
-    pub fn with_preserve_structure(mut self, preserve_structure: bool) -> Self {
-        self.preserve_structure = preserve_structure;
-        self
-    }
-
-    /// Builder pattern for setting minimum file size in KB
-    pub fn with_min_size_kb(mut self, min_size: u64) -> Self {
-        self.min_size = min_size;
-        self
-    }
-
-    /// Builder pattern for setting maximum file size in MB
-    pub fn with_max_size_mb(mut self, max_size: u64) -> Self {
-        self.max_size = Some(max_size);
-        self
-    }
-
-    /// Builder pattern for enabling prescan
-    pub fn with_prescan(mut self, prescan: bool) -> Self {
-        self.prescan = prescan;
-        self
-    }
-
-    /// Builder pattern for setting reencode WebP behavior
-    pub fn with_reencode_webp(mut self, reencode_webp: bool) -> Self {
-        self.reencode_webp = reencode_webp;
-        self
-    }
-
-    /// Builder pattern for setting replace input mode
-    pub fn with_replace_input_mode(mut self, replace_input: ReplaceInputMode) -> Self {
-        self.replace_input = replace_input;
-        self
-    }
-
-    /// Builder pattern for setting supported formats
-    pub fn with_supported_formats(mut self, formats: Vec<String>) -> Self {
-        self.formats = formats;
-        self
-    }
-
     /// Get the effective output directory (calculated if not set)
     pub fn get_output_dir(&self) -> PathBuf {
         self.output_dir
             .clone()
             .unwrap_or_else(|| self.input_dir.join("webp_output"))
-    }
-
-    /// Get the effective thread count (calculated if not set)
-    pub fn get_thread_count(&self) -> usize {
-        self.threads.unwrap_or_else(num_cpus::get)
     }
 }

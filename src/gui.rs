@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use webpify::{
-    CompressionMode, ConversionOptions, ConversionReport, ProgressReporter, ReplaceInputMode,
-    ReportFormat, WebpifyCore,
+    CompressionMode, ConversionReport, ProgressReporter, ReplaceInputMode, ReportFormat,
+    WebpifyCore,
 };
 
 /// Icon definitions optimized for Windows 11 with semantic meaning
@@ -114,10 +114,6 @@ pub struct WebpifyGuiApp {
     generate_report: bool,
     report_format: ReportFormat,
 
-    // Configuration Management
-    config_file: String,
-    profile: String,
-
     // Results
     last_report: Option<ConversionReport>,
     error_message: Option<String>,
@@ -181,10 +177,6 @@ impl Default for WebpifyGuiApp {
             // Report Settings
             generate_report: false,
             report_format: ReportFormat::Json,
-
-            // Configuration Management
-            config_file: String::new(),
-            profile: String::new(),
 
             // Results
             last_report: None,
@@ -1123,37 +1115,6 @@ impl WebpifyGuiApp {
         });
 
         ui.add_space(15.0);
-
-        // Configuration Management
-        ui.group(|ui| {
-            ui.label("⚙️ Configuration Management");
-            ui.add_space(5.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Config file:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.config_file)
-                        .hint_text("Path to configuration file"),
-                );
-                if ui.button("Browse...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .set_title("Select Configuration File")
-                        .add_filter("TOML", &["toml"])
-                        .pick_file()
-                    {
-                        self.config_file = path.display().to_string();
-                    }
-                }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Profile:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.profile)
-                        .hint_text("Configuration profile name"),
-                );
-            });
-        });
     }
 
     fn show_progress_tab(&mut self, ui: &mut egui::Ui) {
@@ -1965,43 +1926,6 @@ impl WebpifyGuiApp {
             }
         };
 
-        // Clear previous results
-        self.clear_results();
-        self.is_converting = true;
-        self.current_tab = Tab::Progress; // Auto-switch to progress tab
-
-        // Create conversion options with full configuration
-        let mut options = ConversionOptions::new(input_path)
-            .with_quality(self.quality)
-            .with_mode(self.mode.clone())
-            .with_dry_run(self.dry_run)
-            .with_overwrite(self.overwrite)
-            .with_preserve_structure(self.preserve_structure)
-            .with_min_size_kb(self.min_size)
-            .with_prescan(self.prescan)
-            .with_reencode_webp(self.reencode_webp)
-            .with_replace_input_mode(self.replace_input.clone());
-
-        // Set output directory
-        if self.output_dir_auto || self.output_dir.is_empty() {
-            // Use default output directory (input_dir/webp_output)
-            let mut default_output = PathBuf::from(&self.input_dir);
-            default_output.push("webp_output");
-            options = options.with_output_dir(default_output);
-        } else {
-            options = options.with_output_dir(PathBuf::from(&self.output_dir));
-        }
-
-        // Set thread count
-        if let Some(threads) = threads {
-            options = options.with_threads(threads);
-        }
-
-        // Set max file size
-        if let Some(max_size) = max_size_mb {
-            options = options.with_max_size_mb(max_size);
-        }
-
         // Parse and set supported formats
         let formats: Vec<String> = self
             .formats
@@ -2010,9 +1934,56 @@ impl WebpifyGuiApp {
             .filter(|s| !s.is_empty())
             .collect();
 
-        if !formats.is_empty() {
-            options = options.with_supported_formats(formats);
+        if formats.is_empty() {
+            self.error_message = Some("No file formats specified".to_string());
+            return;
         }
+
+        // Clear previous results
+        self.clear_results();
+        self.is_converting = true;
+        self.current_tab = Tab::Progress; // Auto-switch to progress tab
+
+        // Output directory (GUI computes the default so it can show it in the form)
+        let output_dir = if self.output_dir_auto || self.output_dir.is_empty() {
+            let mut default_output = PathBuf::from(&self.input_dir);
+            default_output.push("webp_output");
+            default_output
+        } else {
+            PathBuf::from(&self.output_dir)
+        };
+
+        // Assemble options through the shared merge path (config → profile → GUI form)
+        let frontend = webpify::options::FrontendOptions {
+            input_dir: input_path,
+            output_dir: Some(output_dir),
+            quality: Some(self.quality),
+            mode: Some(self.mode.clone()),
+            threads,
+            formats: Some(formats),
+            overwrite: Some(self.overwrite),
+            preserve_structure: Some(self.preserve_structure),
+            max_size: max_size_mb,
+            min_size: Some(self.min_size),
+            replace_input: Some(self.replace_input.clone()),
+            reencode_webp: Some(self.reencode_webp),
+            dry_run: Some(self.dry_run),
+            generate_report: Some(self.generate_report),
+            report_format: Some(self.report_format.clone()),
+            verbose: Some(self.verbose),
+            quiet: Some(self.quiet),
+            config_file: None,
+            profile: None,
+        };
+
+        let options = match webpify::options::assemble(frontend) {
+            Ok((options, _cli)) => options,
+            Err(e) => {
+                self.is_converting = false;
+                self.error_message = Some(format!("Invalid settings: {e:#}"));
+                return;
+            }
+        };
 
         // Start conversion in background thread
         let progress_reporter = Arc::clone(&self.progress_reporter);
@@ -2141,7 +2112,7 @@ fn main() -> Result<(), eframe::Error> {
 }
 
 fn setup_custom_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
+    let fonts = egui::FontDefinitions::default();
 
     // Install system fonts for better international character support
     // This allows proper display of CJK characters in file paths and names,

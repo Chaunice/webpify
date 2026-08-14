@@ -5,7 +5,8 @@ use std::path::PathBuf;
 // Use the library
 use webpify::{
     CompressionMode, ConversionReport, ReplaceInputMode, ReportFormat, WebpifyCore,
-    config::ConversionOptions, generate_report,
+    generate_report,
+    options::{FrontendOptions, assemble},
 };
 
 #[cfg(feature = "cli")]
@@ -50,37 +51,37 @@ pub struct Args {
     #[arg(short, long, value_name = "DIR")]
     pub output: Option<PathBuf>,
 
-    /// WebP compression quality (0-100)
-    #[arg(short, long, default_value = "80", value_name = "QUALITY")]
-    pub quality: u8,
+    /// WebP compression quality (0-100, default: 80)
+    #[arg(short, long, value_name = "QUALITY")]
+    pub quality: Option<u8>,
 
     /// Number of parallel threads (defaults to CPU core count for I/O optimization)
     #[arg(short, long, value_name = "NUM")]
     pub threads: Option<usize>,
 
-    /// Compression mode
-    #[arg(short, long, default_value = "lossless", value_enum)]
-    pub mode: CompressionModeArg,
+    /// Compression mode (default: lossless)
+    #[arg(short, long, value_enum)]
+    pub mode: Option<CompressionModeArg>,
 
     /// Supported input formats (defaults to common formats)
-    #[arg(long, value_delimiter = ',', default_values = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"])]
+    #[arg(long, value_delimiter = ',')]
     pub formats: Vec<String>,
 
     /// Overwrite existing files
     #[arg(long)]
     pub overwrite: bool,
 
-    /// Preserve original directory structure
-    #[arg(long, default_value = "true")]
-    pub preserve_structure: bool,
+    /// Preserve original directory structure (default: true)
+    #[arg(long)]
+    pub preserve_structure: Option<bool>,
 
     /// Maximum file size limit (MB)
     #[arg(long, value_name = "SIZE")]
     pub max_size: Option<u64>,
 
-    /// Minimum file size limit (KB)
-    #[arg(long, default_value = "1", value_name = "SIZE")]
-    pub min_size: u64,
+    /// Minimum file size limit (KB, default: 1)
+    #[arg(long, value_name = "SIZE")]
+    pub min_size: Option<u64>,
 
     /// Enable pre-processing scan
     #[arg(long, default_value = "true")]
@@ -98,9 +99,9 @@ pub struct Args {
     #[arg(long)]
     pub report: bool,
 
-    /// Report output format
-    #[arg(long, default_value = "json", value_enum)]
-    pub report_format: ReportFormatArg,
+    /// Report output format (default: json)
+    #[arg(long, value_enum)]
+    pub report_format: Option<ReportFormatArg>,
 
     /// Configuration file path
     #[arg(short, long, value_name = "FILE")]
@@ -110,9 +111,9 @@ pub struct Args {
     #[arg(long, value_name = "PROFILE")]
     pub profile: Option<String>,
 
-    /// How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete]
-    #[arg(long, value_enum, default_value = "off")]
-    pub replace_input: ReplaceInputModeArg,
+    /// How to handle input files after successful conversion [off: keep, recycle: move to recycle bin, delete: permanently delete] (default: off)
+    #[arg(long, value_enum)]
+    pub replace_input: Option<ReplaceInputModeArg>,
 
     /// Force re-encoding of WebP files (by default, .webp files are skipped)
     #[arg(long, default_value_t = false)]
@@ -189,42 +190,51 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    // Merge config file → profile → CLI args into final options (CLI wins)
+    let frontend = FrontendOptions {
+        input_dir: args.input.clone(),
+        output_dir: args.output.clone(),
+        quality: args.quality,
+        mode: args.mode.map(Into::into),
+        threads: args.threads,
+        formats: (!args.formats.is_empty()).then(|| args.formats.clone()),
+        overwrite: args.overwrite.then_some(true),
+        preserve_structure: args.preserve_structure,
+        max_size: args.max_size,
+        min_size: args.min_size,
+        replace_input: args.replace_input.map(Into::into),
+        reencode_webp: args.reencode_webp.then_some(true),
+        dry_run: args.dry_run.then_some(true),
+        generate_report: args.report.then_some(true),
+        report_format: args.report_format.map(Into::into),
+        verbose: args.verbose.then_some(true),
+        quiet: args.quiet.then_some(true),
+        config_file: args.config.clone(),
+        profile: args.profile.clone(),
+    };
+
+    let (options, cli) = assemble(frontend)?;
+    let should_generate_report = options.generate_report;
+    let report_format = options.report_format.clone();
+
     // Initialize logging
-    if args.verbose {
+    if cli.verbose {
         env_logger::Builder::from_default_env()
             .filter_level(log::LevelFilter::Debug)
             .init();
-    } else if !args.quiet {
+    } else if !cli.quiet {
         env_logger::Builder::from_default_env()
             .filter_level(log::LevelFilter::Info)
             .init();
-    }
-
-    // Convert CLI args to library configuration
-    let mut options = ConversionOptions::new(args.input)
-        .with_quality(args.quality)
-        .with_mode(args.mode.into())
-        .with_dry_run(args.dry_run)
-        .with_overwrite(args.overwrite);
-
-    if let Some(output) = args.output {
-        options = options.with_output_dir(output);
-    }
-
-    if let Some(threads) = args.threads {
-        options = options.with_threads(threads);
     }
 
     // Create and run the core engine
     let mut core = WebpifyCore::new(options);
 
     #[cfg(feature = "cli")]
-    let progress_reporter = if !args.quiet {
-        let reporter = ConsoleProgressReporter::new();
-        if !args.quiet {
-            print_ascii_banner();
-        }
-        Some(Box::new(reporter) as Box<dyn webpify::ProgressReporter>)
+    let progress_reporter = if !cli.quiet {
+        print_ascii_banner();
+        Some(Box::new(ConsoleProgressReporter::new()) as Box<dyn webpify::ProgressReporter>)
     } else {
         None
     };
@@ -236,12 +246,12 @@ fn main() -> Result<()> {
     let report = core.run_with_progress(progress_reporter)?;
 
     // Generate report if requested
-    if args.report {
-        generate_report(&report, &args.report_format.into())?;
+    if should_generate_report {
+        generate_report(&report, &report_format)?;
     }
 
     // Print summary if not quiet
-    if !args.quiet {
+    if !cli.quiet {
         print_results_summary(&report);
     }
 
